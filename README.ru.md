@@ -2,6 +2,8 @@
 
 [English](README.md) · **Русский**
 
+[<img src="https://f-droid.org/badge/get-it-on-ru.png" alt="Доступно в F-Droid" height="80">](https://f-droid.org/ru/packages/app.brix/)
+
 Приложение для IRL-стриминга с телефона на Android, с объединением нескольких
 каналов связи (SRTLA bonding).
 
@@ -22,6 +24,15 @@ Wi-Fi ловит на веранде кафе, сота — на улице, а 
 |---|---|
 | ![Экран стримера](fastlane/metadata/android/ru/images/phoneScreenshots/2_stream.jpg) | ![Настройки](fastlane/metadata/android/ru/images/phoneScreenshots/3_settings.jpg) |
 | Экран стримера с быстрыми кнопками | Настройки |
+
+## Установка
+
+- **[F-Droid](https://f-droid.org/ru/packages/app.brix/)** — обновления приходят сами.
+- **APK со страницы [Releases](https://github.com/0rb1ta/Brix/releases)** — у каждого выпуска указан sha256.
+
+Подпись одна и та же: F-Droid публикует наш собственный APK (их сервер
+пересобирает его из исходников и сверяет побайтно). Переходить с одного на
+другое можно без удаления приложения и без потери настроек. Android 10 или новее.
 
 ## Это бета
 

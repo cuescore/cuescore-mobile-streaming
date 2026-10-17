@@ -2,6 +2,8 @@
 
 **English** · [Русский](README.ru.md)
 
+[<img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/app.brix/)
+
 An Android app for IRL streaming that bonds several network links into one
 stream (SRTLA).
 
@@ -22,6 +24,16 @@ survive the walk between them.
 |---|---|
 | ![Streamer screen](fastlane/metadata/android/en-US/images/phoneScreenshots/2_stream.jpg) | ![Settings](fastlane/metadata/android/en-US/images/phoneScreenshots/3_settings.jpg) |
 | Streamer screen with quick buttons | Settings |
+
+## Installing
+
+- **[F-Droid](https://f-droid.org/packages/app.brix/)** — updates arrive by themselves.
+- **APK from [Releases](https://github.com/0rb1ta/Brix/releases)** — each release lists its sha256.
+
+Both are signed with the same key: F-Droid publishes our own APK (its build
+server rebuilds it from source and checks it matches byte for byte). You can
+switch between them without uninstalling and without losing settings.
+Android 10 or newer.
 
 ## This is a beta
 
