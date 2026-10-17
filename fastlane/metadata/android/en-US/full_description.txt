@@ -6,7 +6,7 @@ An open alternative to the closed IRL apps on Android.
 
 THIS IS A BETA
 
-It works and has been used on air, but on a single device — a Samsung S21. Untested: WHIP against a live receiver, MP4 recording over long sessions, Moblink with a real second phone. Donation overlays support DonationAlerts only. The full list of limitations is in the project description on GitHub.
+It works and has been used on air, but on a single device — a Samsung S21. Untested: MP4 recording over long sessions, Moblink with a real second phone. WHIP sometimes fails to connect on the first try — starting again helps. A Bluetooth headset microphone does not work yet: recording stays on the built-in one. The full list of limitations is in the project description on GitHub.
 
 TRANSPORT
 
@@ -21,12 +21,14 @@ VIDEO AND AUDIO
 * 720p and 1080p, H.264 and HEVC, hardware encoder.
 * Scenes: camera, a "be right back" still, or screen capture. Each carries its own overlays, camera side and audio mode.
 * Lens selection, zoom, torch, tap to focus, optical and electronic stabilisation controlled separately.
-* Microphone capsule selection, including wired, Bluetooth and USB.
+* Microphone selection: built-in, wired or USB.
+* On-screen microphone level meter: clipping and mute are visible at a glance.
+* A first-run wizard; settings offer only the capture modes your phone actually supports.
 
 AUDIENCE
 
-* Twitch, Kick and VK Video Live chat in one feed, anonymously. Shown to the streamer only, never in the stream.
-* DonationAlerts overlays: image and caption drawn straight into the frame, with the donation sound optionally mixed in.
+* Twitch, Kick and VK Video Live chat in one feed, anonymously, with emotes. Shown to the streamer only, never in the stream.
+* Donation overlays for DonationAlerts, DonatePay, iHAQ, Donatty and donate.stream: image and caption drawn straight into the frame, with the donation sound optionally mixed in.
 * Any web page as a source of picture in the frame.
 
 ALSO
@@ -38,4 +40,4 @@ ALSO
 
 REQUIREMENTS
 
-Android 10 or newer, a hardware encoder, and a receiver that speaks SRTLA. Bonding needs several network interfaces at once.
+Android 10 or newer and a hardware encoder. Bonding needs a receiver that speaks SRTLA and several networks at once.
