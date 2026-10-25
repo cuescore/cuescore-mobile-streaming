@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * Kick chat rides Pusher (a third-party WS pub/sub service), same as it did
  * when several community tools were written against it — but Kick has since
  * reshuffled the channel-name scheme at least twice. Verified live against
- * `wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679` on 04.09: a plain
+ * `wss://ws-us2.pusher.com/app/<key>` (see [KICK_PUSHER_WS_URL]) on 04.09: a plain
  * `chatroom.{id}` subscribe "succeeds" (Pusher acks any channel name whether
  * or not anyone publishes to it) but delivers nothing. The channel that
  * actually carries `App\Events\ChatMessageEvent` today is `chatrooms.{id}.v2`.

@@ -290,7 +290,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val current = _settings.value
         _settings.value = current.copy(
             streamProfiles = current.streamProfiles + config.streamProfiles,
-            serverProfiles = current.serverProfiles + config.serverProfiles,
+            serverProfiles = app.brix.core.mergeImportedServers(current.serverProfiles, config.serverProfiles),
             quickButtons = config.quickButtons ?: current.quickButtons,
             selectedStreamProfileId = current.selectedStreamProfileId
                 ?: config.streamProfiles.firstOrNull()?.id,

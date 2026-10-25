@@ -97,11 +97,25 @@ class OverlayAudioSource(
         mic.microphoneVolume = gain
     }
 
+    /** Глушим сами, после замера, а не через [MicrophoneSource.mute]: библиотека
+     *  отдаёт при мьюте нули прямо из микрофона, и индикатор видел тишину — мьют
+     *  было не отличить от молчания. Теперь, как в IRL Pro (владелец, 26.10),
+     *  полоски при мьюте продолжают показывать голос, только серым, а в эфир
+     *  уходят нули. `unMute()` — на случай, если микрофон заглушили в обход. */
+    @Volatile
+    private var micMuted = false
+
     fun setMicMuted(muted: Boolean) {
-        if (muted) mic.mute() else mic.unMute()
+        micMuted = muted
+        mic.unMute()
     }
 
-    fun isMicMuted(): Boolean = mic.isMuted()
+    fun isMicMuted(): Boolean = micMuted
+
+    /** Тестам: приёмник кадров без запуска настоящего микрофона. */
+    internal fun attachSinkForTest(sink: GetMicrophoneData) {
+        out = sink
+    }
 
     override fun isRunning(): Boolean = running.get()
 
@@ -112,8 +126,14 @@ class OverlayAudioSource(
 
     override fun inputPCMData(frame: Frame) {
         val sink = out ?: return
-        // Меряем ДО микширования: индикатор показывает голос, а не донат.
+        // Меряем ДО мьюта и ДО микширования: индикатор показывает голос, а не
+        // донат, и при мьюте тоже — серым.
         meter?.submit(frame.buffer, frame.offset, frame.size)
+        val voice = if (micMuted) Frame(ByteArray(frame.size), 0, frame.size, frame.timeStamp) else frame
+        deliver(sink, voice)
+    }
+
+    private fun deliver(sink: GetMicrophoneData, frame: Frame) {
         if (mixing) {
             val chunks = donationPlayers.mapNotNull { it.nextStreamChunk(chunkBytes)?.takeIf { c -> c.isNotEmpty() } }
             if (chunks.isNotEmpty()) {

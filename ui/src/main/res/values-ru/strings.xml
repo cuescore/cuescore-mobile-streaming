@@ -157,7 +157,7 @@
 
     <string name="advanced_record">Записывать стрим</string>
 
-    <string name="about_license">Открытый исходный код, лицензия MIT.</string>
+    <string name="about_license">Открытый исходный код, лицензия GNU GPL v3.</string>
     <string name="about_source">Исходники: github.com/0rb1ta/Brix</string>
     <string name="thermal_ok">Норма</string>
     <string name="thermal_warm">Греется</string>

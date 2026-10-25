@@ -32,3 +32,22 @@ fun List<ConnectionPriority>.withPriority(name: String, enabled: Boolean, weight
     if (idx >= 0) list[idx] = entry else list.add(entry)
     return list
 }
+
+/**
+ * Серверы после импорта по ссылке `brix://` / `moblin://`: привезённые
+ * дописываются к своим.
+ *
+ * Активным остаётся ровно один — экран эфира вещает на первый включённый, а
+ * список серверов показывает радиокнопки. Раньше привезённые приезжали со
+ * своим `enabled`, и после импорта горело несколько кружков, а вещал первый по
+ * списку. Если свой активный есть — он и остаётся, привезённые выключены; если
+ * нет — активным становится первый привезённый включённый (или просто первый).
+ */
+fun mergeImportedServers(current: List<ServerProfile>, imported: List<ServerProfile>): List<ServerProfile> {
+    val activeId = if (current.any { it.enabled }) {
+        null
+    } else {
+        (imported.firstOrNull { it.enabled } ?: imported.firstOrNull())?.id
+    }
+    return current + imported.map { it.copy(enabled = it.id == activeId) }
+}

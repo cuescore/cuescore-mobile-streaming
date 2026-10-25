@@ -1259,22 +1259,19 @@ private fun ImmersiveStream(
             }
 
             if (hud.showAudioLevel) {
-                // Над угловым слотом слева внизу — отдельным полем вне сетки,
-                // куда владелец ставит мьют (20.09). Привязка к месту, а не к
+                // Справа от углового слота слева внизу — отдельного поля вне
+                // сетки, куда владелец ставит мьют. Привязка к месту, а не к
                 // кнопке: что бы ни стояло в слоте, индикатор не переезжает.
-                // Место слота фиксированное (BottomStart, отступ 16 dp, ячейка
-                // 50 dp), поэтому считаем от него, а не читаем координаты.
                 AudioMeter(
                     left = streamer.audioLevelLeft,
                     right = streamer.audioLevelRight,
                     clipping = streamer.audioClipping,
                     muted = state.micMuted,
-                    barHeight = 34.dp,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(
-                            start = CORNER_SLOT_PADDING + (CORNER_SLOT_SIZE - AUDIO_METER_WIDTH) / 2,
-                            bottom = CORNER_SLOT_PADDING + CORNER_SLOT_SIZE + 6.dp,
+                            start = CORNER_SLOT_PADDING + CORNER_SLOT_SIZE + AUDIO_METER_OFFSET,
+                            bottom = CORNER_SLOT_PADDING + (CORNER_SLOT_SIZE - AUDIO_METER_HEIGHT) / 2,
                         ),
                 )
             }
@@ -1829,21 +1826,33 @@ private fun StatusOverlay(
 private val CORNER_SLOT_PADDING = 16.dp
 private val CORNER_SLOT_SIZE = 50.dp
 
-private val AUDIO_METER_BAR = 4.dp
-private val AUDIO_METER_GAP = 3.dp
-private val AUDIO_METER_WIDTH = AUDIO_METER_BAR * 2 + AUDIO_METER_GAP
+private const val AUDIO_METER_SEGMENTS = 10
+private val AUDIO_METER_SEGMENT = 8.dp
+private val AUDIO_METER_SEGMENT_GAP = 2.dp
+private val AUDIO_METER_ROW_GAP = 2.dp
+private val AUDIO_METER_OFFSET = 6.dp
+private val AUDIO_METER_HEIGHT = 46.dp
+private val AUDIO_METER_GREEN = Color(0xFF43A047)
+private val AUDIO_METER_MUTED = Color(0xFF9E9E9E)
 
 /**
- * Уровень микрофона двумя вертикальными полосками у левого края кадра —
- * левый и правый каналы (в моно обе показывают одно и то же).
+ * Уровень микрофона двумя строками сегментов справа от углового слота: верхняя
+ * — левый канал, нижняя — правый (в моно одинаковые).
  *
- * Не в HUD (владелец, 17.09): HUD и так перегружен, а уровень нужен
- * периферийным зрением, не читая цифр. С 20.09 стоит над угловым слотом
- * слева внизу — на месте, а не вслед за кнопкой микрофона. Считается до
- * подмешивания донатов, так что это именно голос.
+ * Вид — как у IRL Pro (владелец, 26.10): горят только сегменты, до которых
+ * дошёл звук, пустые не рисуются; последний — красный. Высота блока почти
+ * равна кнопке слота, чтобы индикатор читался боковым зрением: прежние полоски по
+ * 4 dp на ходу было не разглядеть. 10 сегментов по 6 дБ шкалы −60…0.
  *
- * Мьют — полоски серые: отдельного значка нет, для этого уже есть быстрая
- * кнопка микрофона (владелец, 20.09).
+ * Перегрузка держится 1.5 с ([app.brix.streaming.MicLevelMeter]) — последний
+ * сегмент горит красным всё это время. Мьют — всё серое, но полоски живые:
+ * уровень меряется до глушения, так видно, что микрофон работает.
+ *
+ * Значения читаются в фазе рисования, а не композиции: перерисовка ≤10 раз/с
+ * и только этого холста, без пересборки экрана.
+ *
+ * Не в HUD (владелец, 17.09): HUD и так перегружен. Отдельного значка мьюта
+ * нет — для этого есть быстрая кнопка (20.09).
  */
 @Composable
 private fun AudioMeter(
@@ -1852,35 +1861,34 @@ private fun AudioMeter(
     clipping: kotlinx.coroutines.flow.StateFlow<Boolean>,
     muted: Boolean,
     modifier: Modifier = Modifier,
-    barHeight: androidx.compose.ui.unit.Dp = 90.dp,
 ) {
-    val l by left.collectAsState()
-    val r by right.collectAsState()
-    val clipped by clipping.collectAsState()
-    val idle = Color.White.copy(alpha = 0.25f)
-    val warn = MaterialTheme.colorScheme.error
-    Row(horizontalArrangement = Arrangement.spacedBy(AUDIO_METER_GAP), modifier = modifier) {
-        listOf(l, r).forEach { value ->
-            Box(
-                Modifier
-                    .width(AUDIO_METER_BAR)
-                    .height(barHeight)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(idle),
-                contentAlignment = Alignment.BottomCenter,
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(value.coerceIn(0f, 1f))
-                        .background(
-                            when {
-                                muted -> Color.White.copy(alpha = 0.55f)
-                                clipped -> warn
-                                value > 0.85f -> Color(0xFFFFB300)
-                                else -> Color(0xFF43A047)
-                            },
-                        ),
+    val l = left.collectAsState()
+    val r = right.collectAsState()
+    val clipped = clipping.collectAsState()
+    val red = app.brix.ui.theme.liveColor()
+    val width = AUDIO_METER_SEGMENT * AUDIO_METER_SEGMENTS + AUDIO_METER_SEGMENT_GAP * (AUDIO_METER_SEGMENTS - 1)
+    androidx.compose.foundation.Canvas(modifier.size(width, AUDIO_METER_HEIGHT)) {
+        val seg = AUDIO_METER_SEGMENT.toPx()
+        val step = seg + AUDIO_METER_SEGMENT_GAP.toPx()
+        val rowGap = AUDIO_METER_ROW_GAP.toPx()
+        val rowH = (size.height - rowGap) / 2f
+        val radius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
+        listOf(l.value, r.value).forEachIndexed { row, level ->
+            val y = row * (rowH + rowGap)
+            val lit = (level.coerceIn(0f, 1f) * AUDIO_METER_SEGMENTS).toInt()
+            for (i in 0 until AUDIO_METER_SEGMENTS) {
+                val last = i == AUDIO_METER_SEGMENTS - 1
+                if (i >= lit && !(last && clipped.value)) continue
+                val color = when {
+                    muted -> AUDIO_METER_MUTED
+                    last -> red
+                    else -> AUDIO_METER_GREEN
+                }
+                drawRoundRect(
+                    color = color,
+                    topLeft = androidx.compose.ui.geometry.Offset(i * step, y),
+                    size = androidx.compose.ui.geometry.Size(seg, rowH),
+                    cornerRadius = radius,
                 )
             }
         }

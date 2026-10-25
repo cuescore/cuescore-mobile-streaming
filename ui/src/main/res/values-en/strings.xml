@@ -154,7 +154,7 @@
 
     <string name="advanced_record">Record stream</string>
 
-    <string name="about_license">Open source, MIT license.</string>
+    <string name="about_license">Open source, GNU GPL v3 license.</string>
     <string name="about_source">Source: github.com/0rb1ta/Brix</string>
     <string name="status_rejected">Rejected by server</string>
     <string name="thermal_ok">OK</string>

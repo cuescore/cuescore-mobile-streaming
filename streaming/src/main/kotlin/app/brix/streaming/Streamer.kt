@@ -543,8 +543,11 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun setMuted(muted: Boolean) {
         _state.update { it.copy(micMuted = muted) }
-        micSourceOrNull()?.let { source ->
-            if (muted) source.mute() else source.unMute()
+        // Наш источник глушит сам, после замера уровня (индикатор при мьюте
+        // показывает голос серым); голый микрофон — средствами библиотеки.
+        when (val source = stream.audioSource) {
+            is app.brix.streaming.overlay.OverlayAudioSource -> source.setMicMuted(muted)
+            is MicrophoneSource -> if (muted) source.mute() else source.unMute()
         }
         // Сцена «микрофон + звук телефона»: глушим микрофонную часть, звук
         // телефона идёт дальше. Раньше этот источник падал мимо, и кнопка
