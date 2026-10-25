@@ -1,0 +1,4 @@
+Kick chat: updated Pusher app key; the old one is rejected by the server, chat did not connect in 0.2.0.
+Mic level meter: segmented bars next to the mute slot; clipping held for 1.5 s; level shown grey while muted (measured before mute, stream stays silent); updates capped at 10 Hz.
+Link import: only one server stays active after importing a brix:// or moblin:// link.
+About: licence corrected to GPL-3.0.
