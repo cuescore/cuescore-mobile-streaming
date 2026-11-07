@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home_title">BRIX</string>
-    <string name="home_subtitle">Mobile IRL streaming</string>
+    <string name="home_title">Cuescore</string>
+    <string name="home_subtitle">Mobile Streaming</string>
     <string name="btn_start_streaming">Start streaming</string>
 
     <string name="btn_start">Start</string>

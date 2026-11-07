@@ -23,7 +23,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Brix"
+rootProject.name = "CuescoreMobileStreaming"
 
 include(":app")
 include(":core")
