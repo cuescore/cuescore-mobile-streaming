@@ -190,8 +190,6 @@ private val PRESET_NOTES = listOf(
  * which is saved immediately for subsequent runs. Changing language on step two
  * recreates Activity; the step and entered values survive as with rotation.
  *
- * Mascot and name deliberately omitted: the owner (16.09) found them redundant
- * because the intro had just shown both.
  */
 @Composable
 fun OnboardingScreen(viewModel: SettingsViewModel) {

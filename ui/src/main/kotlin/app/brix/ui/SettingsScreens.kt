@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,12 +139,7 @@ fun CategoryRail(
         }
         add(SettingsCategory.ABOUT to R.string.settings_cat_about)
     }
-    // Console menu rather than cards: monospaced text and a thin indicator
-    // to the left of the selected item echo the terminal character already
-    // present in the mascot and wordmark (design/Brix/assets), previously
-    // absent from the actual UI. A stripe rather than a filled row is
-    // restrained, closer to selection on real control panels than to
-    // a highlighted table cell.
+    // A thin stripe marks the selected category without filling the whole row.
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -255,6 +251,11 @@ fun CategoryHome(
                 item {
                     BrixCard {
                         BrixNavRow(
+                            stringResource(R.string.settings_startup_guide),
+                            divider = true,
+                            onClick = { viewModel.restartOnboarding() },
+                        )
+                        BrixNavRow(
                             stringResource(R.string.settings_server_profiles),
                             value = settings.enabledServers().firstOrNull()?.name
                                 ?: stringResource(R.string.value_none),
@@ -313,8 +314,7 @@ fun CategoryHome(
                     BrixCard {
                         BrixNavRow(stringResource(R.string.settings_about_version), divider = true, onClick = { onRoute(SettingsRoute.About) })
                         BrixNavRow(stringResource(R.string.settings_diagnostics), divider = true, onClick = { onRoute(SettingsRoute.Diagnostics) })
-                        BrixNavRow(stringResource(R.string.settings_device_passport), divider = true, onClick = { onRoute(SettingsRoute.DevicePassport) })
-                        BrixNavRow(stringResource(R.string.settings_startup_guide), divider = false, onClick = { viewModel.restartOnboarding() })
+                        BrixNavRow(stringResource(R.string.settings_device_passport), divider = false, onClick = { onRoute(SettingsRoute.DevicePassport) })
                     }
                 }
             }
@@ -864,7 +864,6 @@ fun AdvancedSettingsScreen(
 fun AboutScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onStartupGuide: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val version = remember(context) {
@@ -885,11 +884,17 @@ fun AboutScreen(
             item {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(R.drawable.brix_icon),
+                        painter = androidx.compose.ui.res.painterResource(
+                            if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+                                R.drawable.ic_cuescore_logo_dark
+                            } else {
+                                R.drawable.ic_cuescore_logo_light
+                            },
+                        ),
                         contentDescription = null,
                         modifier = Modifier
                             .padding(vertical = 16.dp)
-                            .size(96.dp),
+                            .size(width = 200.dp, height = 95.dp),
                     )
                 }
             }
@@ -898,13 +903,8 @@ fun AboutScreen(
                     BrixNavRow(
                         stringResource(R.string.app_name),
                         value = version,
-                        divider = true,
-                        onClick = {},
-                    )
-                    BrixNavRow(
-                        stringResource(R.string.settings_startup_guide),
                         divider = false,
-                        onClick = onStartupGuide,
+                        onClick = {},
                     )
                 }
             }

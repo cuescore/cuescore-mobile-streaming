@@ -33,7 +33,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "app.brix"
+        applicationId = "com.cuescore.mobile.streaming"
         minSdk = 29
         targetSdk = 36
         // Human-readable version without a hash: shown to users, app catalogs

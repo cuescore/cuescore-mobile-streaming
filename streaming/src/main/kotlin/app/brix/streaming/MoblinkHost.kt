@@ -73,7 +73,7 @@ internal class MoblinkHost(
                 newServer.startTunnels(currentHost(), currentPort())
             }
             val newMdns = MoblinkMdns(appContext)
-            newMdns.register(settings.port, android.os.Build.MODEL ?: "BRIX")
+            newMdns.register(settings.port, android.os.Build.MODEL ?: "CueScore Mobile Streaming")
             mdns = newMdns
         } catch (e: Exception) {
             Log.e(tag, "moblink: failed to start server on port ${settings.port}", e)

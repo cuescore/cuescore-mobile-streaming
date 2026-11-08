@@ -85,7 +85,7 @@
     <string name="audio_stereo">stereo</string>
     <string name="audio_mono">mono</string>
 
-    <string name="app_name">BRIX</string>
+    <string name="app_name">CueScore Mobile Streaming</string>
 
     <string name="settings_stream">Stream</string>
     <string name="settings_camera">Camera</string>
@@ -109,7 +109,7 @@
     <string name="quick_button_corner_title">Corner button (bottom-left)</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">Version &amp; licenses</string>
-    <string name="settings_startup_guide">Startup guide</string>
+    <string name="settings_startup_guide">Setup guide</string>
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_hud">HUD</string>
     <string name="hud_battery">Battery</string>
@@ -215,7 +215,6 @@
     <string name="button_adaptive_bitrate">Adaptive bitrate</string>
     <string name="button_overlay">Overlay</string>
     <string name="button_video_effect">Effect</string>
-    <string name="button_mascot">Mascot</string>
     <string name="button_none">None</string>
     <string name="button_power_save">Power save</string>
     <string name="field_srt_latency">Latency (ms)</string>
@@ -356,7 +355,7 @@
          to distinguish our translations from Android system languages. -->
     <string name="locale_tag" translatable="false">en</string>
     <string name="onboarding_welcome_title">Hi there!</string>
-    <string name="onboarding_welcome_p1">Welcome to Brix — an app for IRL streaming.</string>
+    <string name="onboarding_welcome_p1">Welcome to CueScore Mobile Streaming — an app for streaming billiard matches.</string>
     <string name="onboarding_welcome_p2">We keep working on performance, so your feedback matters a lot. Please share reports from different devices (Settings → About → Device passport): we have just one test phone so far, and every report helps the app grow.</string>
     <string name="onboarding_welcome_p3">This is an early beta, and features are still being added. If you’d like something new, tell us on GitHub.</string>
     <string name="onboarding_welcome_p4">Happy streaming!</string>
@@ -365,7 +364,7 @@
     <string name="onboarding_stream_id">Stream ID (streamid)</string>
     <string name="onboarding_stream_id_hint">Optional: fill in only if streamid isn’t already part of the address above.</string>
     <string name="onboarding_import_title">Bring settings from another device</string>
-    <string name="onboarding_import_text">Paste a configuration link from another Brix, Moblin or IRL Pro.</string>
+    <string name="onboarding_import_text">Paste a configuration link from CueScore Mobile Streaming, Moblin or IRL Pro.</string>
     <string name="onboarding_quality_text">Resolution, frame rate and bitrate. All of it can be changed later in the stream profile.</string>
     <string name="onboarding_bitrate">%1$d kbps</string>
     <string name="onboarding_preset_720p30">A safe start on a mobile network</string>
@@ -404,11 +403,11 @@
     <string name="twitch_server_added">Twitch server added to the server list.</string>
     <string name="twitch_server_failed">Could not get the stream key.</string>
     <string name="kick_setup_hint">Kick only allows sign-in for apps with their own key. Create an app at kick.com → Settings → Developer, set Redirect URL to %1$s and paste the Client ID and Client Secret here. The secret stays on this phone only.</string>
-    <string name="kick_waiting_browser">Confirm the sign-in in the browser and come back to Brix.</string>
+    <string name="kick_waiting_browser">Confirm the sign-in in the browser and come back to CueScore Mobile Streaming.</string>
     <string name="kick_login">Sign in to Kick</string>
     <string name="kick_add_server">Create Kick server from account</string>
     <string name="kick_server_added">Kick server added to the server list.</string>
-    <string name="kick_login_success_html">&lt;html&gt;&lt;body style="font-family:sans-serif;text-align:center;padding:40px"&gt;&lt;h2&gt;Signed in&lt;/h2&gt;&lt;p&gt;Return to Brix.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    <string name="kick_login_success_html">&lt;html&gt;&lt;body style="font-family:sans-serif;text-align:center;padding:40px"&gt;&lt;h2&gt;Signed in&lt;/h2&gt;&lt;p&gt;Return to CueScore Mobile Streaming.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     <string name="caps_codec_missing">This phone has no hardware encoder for this codec — the stream won’t start. Pick another one.</string>
     <string name="caps_mode_unsupported">This phone’s encoder or camera doesn’t support this resolution and frame rate — the stream may not start.</string>
     <string name="value_none">none</string>

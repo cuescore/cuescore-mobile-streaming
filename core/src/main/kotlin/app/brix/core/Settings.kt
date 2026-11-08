@@ -52,6 +52,7 @@ enum class ButtonAction {
     ADAPTIVE_BITRATE,
     OVERLAY,
     VIDEO_EFFECT,
+    /** Retained only to read older quick-button configurations. */
     MASCOT,
     POWER_SAVE,
     MIC,
@@ -474,7 +475,7 @@ data class QuickButtonSlot(
 @Serializable
 data class QuickButtonConfig(
     val slots: List<QuickButtonSlot> = defaultQuickButtonSlots(),
-    val cornerSlotAction: ButtonAction? = ButtonAction.MUTE,
+    val cornerSlotAction: ButtonAction? = null,
 )
 
 @Serializable
@@ -901,6 +902,7 @@ data class AppSettings(
         }
         return copy(
             onboardingDone = onboardingDone ?: true,
+            quickButtons = quickButtons.withMicrophoneInCameraSlot().withoutMascot(),
             moblink = migratedMoblink,
             serverProfiles = migratedServers,
             widgets = migratedWidgets,
@@ -938,11 +940,25 @@ fun defaultConnectionPriorities(): List<ConnectionPriority> = listOf(
 
 fun defaultQuickButtonSlots(): List<QuickButtonSlot> = listOf(
     QuickButtonSlot(ButtonAction.TORCH, QuickButtonWidth.SMALL, 0, QuickButtonColumn.RIGHT),
-    QuickButtonSlot(ButtonAction.FLIP, QuickButtonWidth.SMALL, 0, QuickButtonColumn.LEFT),
+    QuickButtonSlot(ButtonAction.MUTE, QuickButtonWidth.SMALL, 0, QuickButtonColumn.LEFT),
     QuickButtonSlot(ButtonAction.INFO, QuickButtonWidth.SMALL, 1, QuickButtonColumn.RIGHT),
     QuickButtonSlot(ButtonAction.LOCK, QuickButtonWidth.SMALL, 1, QuickButtonColumn.LEFT),
     QuickButtonSlot(ButtonAction.ADAPTIVE_BITRATE, QuickButtonWidth.SMALL, 2, QuickButtonColumn.RIGHT),
     QuickButtonSlot(ButtonAction.SETTINGS, QuickButtonWidth.SMALL, 2, QuickButtonColumn.LEFT),
+)
+
+internal fun QuickButtonConfig.withMicrophoneInCameraSlot(): QuickButtonConfig {
+    val cameraSlot = slots.firstOrNull { it.action == ButtonAction.FLIP } ?: return this
+    return copy(
+        slots = slots.filterNot { it.action == ButtonAction.MUTE || it.action == ButtonAction.FLIP } +
+            cameraSlot.copy(action = ButtonAction.MUTE),
+        cornerSlotAction = if (cornerSlotAction == ButtonAction.MUTE) null else cornerSlotAction,
+    )
+}
+
+fun QuickButtonConfig.withoutMascot(): QuickButtonConfig = copy(
+    slots = slots.filterNot { it.action == ButtonAction.MASCOT },
+    cornerSlotAction = cornerSlotAction?.takeUnless { it == ButtonAction.MASCOT },
 )
 
 /**

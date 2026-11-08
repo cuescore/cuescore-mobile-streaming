@@ -21,12 +21,11 @@ import java.util.Locale
  */
 object Diagnostics {
 
-    private const val AUTHORITY = "app.brix.fileprovider"
     private val TS = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
     fun collect(context: Context, settings: AppSettings): String {
         val sb = StringBuilder()
-        sb.appendLine("=== Brix diagnostics ===")
+        sb.appendLine("=== CueScore Mobile Streaming diagnostics ===")
         sb.appendLine("time: ${TS.format(Date())}")
         sb.appendLine("device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
         sb.appendLine("android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
@@ -48,7 +47,7 @@ object Diagnostics {
         val dir = File(context.getExternalFilesDir(null), "diagnostics").also { it.mkdirs() }
         val file = File(dir, "diagnostics_${TS.format(Date())}.txt")
         file.writeText(collect(context, settings))
-        return FileProvider.getUriForFile(context, AUTHORITY, file)
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
     /**
@@ -63,7 +62,7 @@ object Diagnostics {
         val dir = File(context.getExternalFilesDir(null), "diagnostics").also { it.mkdirs() }
         val file = File(dir, "${prefix}_${TS.format(Date())}.txt")
         file.writeText(text)
-        return FileProvider.getUriForFile(context, AUTHORITY, file)
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
     /** Session recording files (`SessionRecorder`), newest first. */
@@ -77,7 +76,7 @@ object Diagnostics {
     /** The most recent session recording, ready to send. `null` if there are no recordings. */
     fun exportLatestSessionLog(context: Context): Uri? {
         val file = listSessionLogs(context).firstOrNull() ?: return null
-        return FileProvider.getUriForFile(context, AUTHORITY, file)
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
     /**

@@ -65,7 +65,7 @@ internal class StreamRecorder(
             return
         }
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val file = File(dir, "brix-$stamp.mp4")
+        val file = File(dir, "cuescore-$stamp.mp4")
         runCatching {
             stream.startRecord(file.absolutePath, RecordController.RecordTracks.ALL, listener)
         }.onSuccess {

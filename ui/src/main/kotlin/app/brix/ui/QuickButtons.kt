@@ -31,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.FlashlightOff
 import androidx.compose.material.icons.filled.FlipCameraAndroid
@@ -171,7 +170,7 @@ fun ButtonAction.icon(active: Boolean = false): ImageVector = when (this) {
     ButtonAction.ADAPTIVE_BITRATE -> Icons.Filled.Speed
     ButtonAction.OVERLAY -> if (active) Icons.Filled.Layers else Icons.Filled.Layers
     ButtonAction.VIDEO_EFFECT -> Icons.Filled.Palette
-    ButtonAction.MASCOT -> Icons.Filled.Face
+    ButtonAction.MASCOT -> error("Legacy mascot action is not available")
     ButtonAction.POWER_SAVE -> Icons.Filled.BatterySaver
     // Active when the microphone is selected manually rather than by the system.
     ButtonAction.MIC -> if (active) Icons.Filled.SettingsVoice else Icons.Filled.KeyboardVoice
@@ -194,7 +193,7 @@ fun ButtonAction.label(): String = stringResource(
         ButtonAction.ADAPTIVE_BITRATE -> R.string.button_adaptive_bitrate
         ButtonAction.OVERLAY -> R.string.button_overlay
         ButtonAction.VIDEO_EFFECT -> R.string.button_video_effect
-        ButtonAction.MASCOT -> R.string.button_mascot
+        ButtonAction.MASCOT -> error("Legacy mascot action is not available")
         ButtonAction.POWER_SAVE -> R.string.button_power_save
         ButtonAction.MIC -> R.string.button_mic
         ButtonAction.SCENE -> R.string.button_scene
@@ -224,7 +223,6 @@ fun QuickButtonGrid(
     onConfigChange: (QuickButtonConfig) -> Unit,
     editing: Boolean = false,
     onEditingChange: (Boolean) -> Unit = {},
-    mascotState: MascotState = MascotState.IDLE,
     modifier: Modifier = Modifier,
 ) {
     var menu by remember { mutableStateOf<MenuTarget?>(null) }
@@ -305,7 +303,6 @@ fun QuickButtonGrid(
                         QuickActionButton(
                             action = large.action,
                             wide = true,
-                            mascotState = mascotState,
                             onClick = { if (editing) openActionMenu(row, null, large) else onAction(large.action) },
                             onLongPress = { openActionMenu(row, null, large) },
                         )
@@ -339,7 +336,6 @@ fun QuickButtonGrid(
                             slot = leftSlot,
                             editing = editing,
                             active = leftSlot?.action in activeActions,
-                            mascotState = mascotState,
                             onAction = onAction,
                             onRemove = leftSlot?.let { { removeSlot(it) } },
                             openMenu = { openActionMenu(row, QuickButtonColumn.LEFT, leftSlot) },
@@ -372,7 +368,6 @@ fun QuickButtonGrid(
                             slot = rightSlot,
                             editing = editing,
                             active = rightSlot?.action in activeActions,
-                            mascotState = mascotState,
                             onAction = onAction,
                             onRemove = rightSlot?.let { { removeSlot(it) } },
                             openMenu = { openActionMenu(row, QuickButtonColumn.RIGHT, rightSlot) },
@@ -430,7 +425,6 @@ fun QuickButtonGrid(
                                     action = large.action,
                                     wide = true,
                                     active = large.action in activeActions,
-                                    mascotState = mascotState,
                                     onClick = { if (editing) openActionMenu(row, null, large) else onAction(large.action) },
                                     onLongPress = { openActionMenu(row, null, large) },
                                 )
@@ -445,8 +439,8 @@ fun QuickButtonGrid(
                             val leftSlot = smallByCell[row to QuickButtonColumn.LEFT]
                             val rightSlot = smallByCell[row to QuickButtonColumn.RIGHT]
                             Row(horizontalArrangement = Arrangement.spacedBy(GRID_SPACING)) {
-                                ActionCellView(row = row, col = QuickButtonColumn.LEFT, slot = leftSlot, editing = editing, active = leftSlot?.action in activeActions, mascotState = mascotState, onAction = onAction, onRemove = leftSlot?.let { { removeSlot(it) } }, openMenu = { openActionMenu(row, QuickButtonColumn.LEFT, leftSlot) }, menuOpen = menu == ActionCell(row, QuickButtonColumn.LEFT, leftSlot), menuContent = { SlotMenu(existing = leftSlot, usedActions = usedActions, size = menuSize, onSize = { menuSize = it }, largeAllowed = rightSlot == null, onPick = { action -> if (leftSlot != null) changeAction(leftSlot, action) else if (menuSize == QuickButtonWidth.LARGE) placeLarge(row, action) else placeSmall(row, QuickButtonColumn.LEFT, action); menu = null }, onRemove = leftSlot?.let { { removeSlot(it) } }, onClose = { menu = null }) })
-                                ActionCellView(row = row, col = QuickButtonColumn.RIGHT, slot = rightSlot, editing = editing, active = rightSlot?.action in activeActions, mascotState = mascotState, onAction = onAction, onRemove = rightSlot?.let { { removeSlot(it) } }, openMenu = { openActionMenu(row, QuickButtonColumn.RIGHT, rightSlot) }, menuOpen = menu == ActionCell(row, QuickButtonColumn.RIGHT, rightSlot), menuContent = { SlotMenu(existing = rightSlot, usedActions = usedActions, size = menuSize, onSize = { menuSize = it }, largeAllowed = leftSlot == null, onPick = { action -> if (rightSlot != null) changeAction(rightSlot, action) else if (menuSize == QuickButtonWidth.LARGE) placeLarge(row, action) else placeSmall(row, QuickButtonColumn.RIGHT, action); menu = null }, onRemove = rightSlot?.let { { removeSlot(it) } }, onClose = { menu = null }) })
+                                ActionCellView(row = row, col = QuickButtonColumn.LEFT, slot = leftSlot, editing = editing, active = leftSlot?.action in activeActions, onAction = onAction, onRemove = leftSlot?.let { { removeSlot(it) } }, openMenu = { openActionMenu(row, QuickButtonColumn.LEFT, leftSlot) }, menuOpen = menu == ActionCell(row, QuickButtonColumn.LEFT, leftSlot), menuContent = { SlotMenu(existing = leftSlot, usedActions = usedActions, size = menuSize, onSize = { menuSize = it }, largeAllowed = rightSlot == null, onPick = { action -> if (leftSlot != null) changeAction(leftSlot, action) else if (menuSize == QuickButtonWidth.LARGE) placeLarge(row, action) else placeSmall(row, QuickButtonColumn.LEFT, action); menu = null }, onRemove = leftSlot?.let { { removeSlot(it) } }, onClose = { menu = null }) })
+                                ActionCellView(row = row, col = QuickButtonColumn.RIGHT, slot = rightSlot, editing = editing, active = rightSlot?.action in activeActions, onAction = onAction, onRemove = rightSlot?.let { { removeSlot(it) } }, openMenu = { openActionMenu(row, QuickButtonColumn.RIGHT, rightSlot) }, menuOpen = menu == ActionCell(row, QuickButtonColumn.RIGHT, rightSlot), menuContent = { SlotMenu(existing = rightSlot, usedActions = usedActions, size = menuSize, onSize = { menuSize = it }, largeAllowed = leftSlot == null, onPick = { action -> if (rightSlot != null) changeAction(rightSlot, action) else if (menuSize == QuickButtonWidth.LARGE) placeLarge(row, action) else placeSmall(row, QuickButtonColumn.RIGHT, action); menu = null }, onRemove = rightSlot?.let { { removeSlot(it) } }, onClose = { menu = null }) })
                             }
                         }
                     }
@@ -472,7 +466,6 @@ private fun ActionCellView(
     openMenu: () -> Unit,
     menuOpen: Boolean,
     menuContent: @Composable () -> Unit,
-    mascotState: MascotState = MascotState.IDLE,
 ) {
     Box(Modifier.size(SMALL_W, SMALL_H)) {
         if (slot != null) {
@@ -480,7 +473,6 @@ private fun ActionCellView(
                 action = slot.action,
                 wide = false,
                 active = active,
-                mascotState = mascotState,
                 onClick = { if (editing) openMenu() else onAction(slot.action) },
                 onLongPress = openMenu,
             )
@@ -561,7 +553,6 @@ internal fun QuickActionButton(
     wide: Boolean,
     modifier: Modifier = Modifier,
     active: Boolean = false,
-    mascotState: MascotState = MascotState.IDLE,
     onClick: () -> Unit,
     onLongPress: () -> Unit = {},
 ) {
@@ -570,35 +561,13 @@ internal fun QuickActionButton(
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
 
-    if (action == ButtonAction.MASCOT) {
-        // The mascot draws its own card (background/border) — still wrapped
-        // in the same tap/long-press box so long-press-to-edit keeps working
-        // like every other slot.
-        Box(
-            modifier = modifier
-                .then(sizeMod)
-                .pointerInput(Unit) {
-                    detectTapWithLongPress(
-                        onTap = { currentOnClick() },
-                        onLongPress = { currentOnLongPress() },
-                        onPressedChange = { pressed = it },
-                    )
-                },
-        ) {
-            BrixMascot(state = mascotState, modifier = Modifier.fillMaxSize())
-        }
-        return
-    }
-
     val isMuteActive = active && action == ButtonAction.MUTE
     val bg = when {
-        action == ButtonAction.CUESCORE_SCOREBOARD && !active -> Color(0xFF0A1B4D)
         isMuteActive -> MaterialTheme.colorScheme.error
         active -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.secondaryContainer
     }
     val iconTint = when {
-        action == ButtonAction.CUESCORE_SCOREBOARD -> Color.White
         isMuteActive -> MaterialTheme.colorScheme.onError
         active -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSecondaryContainer
@@ -895,7 +864,7 @@ private fun SlotMenu(
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(12.dp))
-                val actions = ButtonAction.entries
+                val actions = ButtonAction.entries.filterNot { it == ButtonAction.MASCOT }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.height(280.dp),
@@ -976,7 +945,6 @@ internal fun CornerSlotView(
     onAssign: (ButtonAction) -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
-    mascotState: MascotState = MascotState.IDLE,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Box(modifier) {
@@ -985,10 +953,6 @@ internal fun CornerSlotView(
                 action = action,
                 wide = false,
                 active = active,
-                // The corner slot can hold MASCOT like any other slot; without
-                // this it rendered with the IDLE default forever, so a mascot
-                // parked here never reacted to LIVE/RECONNECTING/OVERHEAT.
-                mascotState = mascotState,
                 onClick = { if (editing) menuOpen = true else onAction(action) },
                 onLongPress = { if (editing) menuOpen = true },
             )
@@ -1038,7 +1002,7 @@ fun QuickButtonsConfigScreen(
     }
 
     val usedActions = slots.map { it.action }.toSet()
-    val available = ButtonAction.entries.filter { it !in usedActions }
+    val available = ButtonAction.entries.filter { it !in usedActions && it != ButtonAction.MASCOT }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -1157,7 +1121,7 @@ fun QuickButtonsConfigScreen(
                         text = { Text(stringResource(R.string.button_none)) },
                         onClick = { commit(slots, null); showCornerMenu = false },
                     )
-                    ButtonAction.entries.forEach { action ->
+                    ButtonAction.entries.filterNot { it == ButtonAction.MASCOT }.forEach { action ->
                         DropdownMenuItem(
                             text = { Text(action.label()) },
                             onClick = { commit(slots, action); showCornerMenu = false },

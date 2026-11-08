@@ -44,7 +44,7 @@ object CrashReporter {
 
     internal fun reportText(context: Context, thread: Thread, throwable: Throwable): String {
         val sb = StringBuilder()
-        sb.appendLine("=== Brix crash report ===")
+        sb.appendLine("=== CueScore Mobile Streaming crash report ===")
         sb.appendLine("time: ${TS.format(Date())}")
         sb.appendLine("app: ${appVersion(context)}")
         sb.appendLine("device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")

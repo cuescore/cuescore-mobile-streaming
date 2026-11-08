@@ -1,39 +1,18 @@
-# Brix
+# CueScore Mobile Streaming
 
-**English** · [Русский](README.ru.md)
+An Android streaming app for billiard matches, with a
+scoreboard overlay you can show or hide from the stream controls.
 
-[<img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/app.brix/)
+This is a fork of Brix (https://github.com/0rb1ta/Brix) and has its own CueScore
+branding, features and adjustments.
 
-An Android app for IRL streaming that bonds several network links into one
-stream (SRTLA).
-
-An open alternative to the closed IRL apps on Android. For the case where Wi-Fi
-reaches the café terrace, cellular covers the street, and the broadcast has to
-survive the walk between them.
-
-> **Status: early.** It works and has been tested in the field — but on a single
-> device, a Samsung S21 (Exynos 2100, Android 15). Reports from other phones are
-> the most valuable thing you can contribute: see [Contributing](#contributing).
-
-![Bonding: two links carrying one stream](fastlane/metadata/android/en-US/images/phoneScreenshots/1_bonding.jpg)
-
-*Live, with the HUD expanded: Wi-Fi and cellular carrying 1.6 and 1.1 Mbps of one
-2.7 Mbps stream, with RTT, drops, battery and temperature.*
-
-| | |
-|---|---|
-| ![Streamer screen](fastlane/metadata/android/en-US/images/phoneScreenshots/2_stream.jpg) | ![Settings](fastlane/metadata/android/en-US/images/phoneScreenshots/3_settings.jpg) |
-| Streamer screen with quick buttons | Settings |
+The Android application ID is `com.cuescore.mobile.streaming`, so this fork
+installs separately from the original app. Existing `app.brix` installations keep
+their own data; settings are not automatically transferred to the new installation.
 
 ## Installing
 
-- **[F-Droid](https://f-droid.org/packages/app.brix/)** — updates arrive by themselves.
-- **APK from [Releases](https://github.com/0rb1ta/Brix/releases)** — each release lists its sha256.
-
-Both are signed with the same key: F-Droid publishes our own APK (its build
-server rebuilds it from source and checks it matches byte for byte). You can
-switch between them without uninstalling and without losing settings.
-Android 10 or newer.
+Install by downloading latest version from Google Play Store.
 
 ## This is a beta
 
@@ -42,8 +21,8 @@ follows is an honest list of what is untested or limited. It matters more than
 the feature list: it tells you what you can rely on and what you cannot yet.
 
 **Field-tested:** SRTLA bonding over Wi-Fi and cellular, plain SRT, RTMP
-(including straight to Twitch), adaptive bitrate, scenes, chat, donation
-overlays, reconnect after losing a link.
+(including straight to Twitch), adaptive bitrate, scenes, reconnect after losing
+a link.
 
 **Untested:**
 
@@ -56,12 +35,12 @@ overlays, reconnect after losing a link.
   real second device: the author does not have one.
 - **Kick and YouTube** — they should behave like Twitch, but were not tried.
 - **Any device other than the Samsung S21** (Exynos 2100, Android 15).
-  Everything known about this app's behaviour comes from that one phone.
+  Everything known about this app's behavior comes from that one phone.
 
 **Limitations worth knowing up front:**
 
 - **Donation overlays: DonationAlerts is field-tested.** DonatePay, iHAQ,
-  Donatty and donate.stream widgets are recognised and their connection is shown
+  Donatty and donate.stream widgets are recognized and their connection is shown
   in the HUD, but a real donation through them has not been seen yet.
   StreamElements is not supported.
 - **Constant bitrate (CBR) is unavailable on the S21** — none of its hardware
@@ -200,15 +179,15 @@ Patches are welcome too. Before sending one, run:
 
 ## Licence
 
-Brix is distributed under the [GNU GPL v3](LICENSE). The code is free to use,
+CueScore Mobile Streaming is distributed under the [GNU GPL v3](LICENSE). The code is free to use,
 study and modify. All forks and derivative works must stay open under the same
-licence.
+license.
 
-### The name
+### Upstream attribution and branding
 
-**The licence covers the code, not the name.** "Brix", the logo and the mascot
+**The license covers the code, not the name.** "Brix", the logo and the mascot
 belong to the author and are not part of the freely licensed work.
 
-Fork the project — please do — but under your own name. This is not a
-formality: someone downloading "Brix" from elsewhere is entitled to expect it to
-be this Brix, and not a third-party build with unknown changes.
+This fork uses the name CueScore Mobile Streaming and CueScore artwork instead.
+The upstream branding notice above is retained for attribution, not as the name
+or branding of this app.

@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.brix.core.withPriority
+import app.brix.core.withoutMascot
 import app.brix.core.ConnectionPriority
 import app.brix.core.AppSettings
 import app.brix.core.CueScorePlayer
@@ -313,7 +314,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _settings.value = current.copy(
             streamProfiles = current.streamProfiles + config.streamProfiles,
             serverProfiles = app.brix.core.mergeImportedServers(current.serverProfiles, config.serverProfiles),
-            quickButtons = config.quickButtons ?: current.quickButtons,
+            quickButtons = (config.quickButtons ?: current.quickButtons).withoutMascot(),
             selectedStreamProfileId = current.selectedStreamProfileId
                 ?: config.streamProfiles.firstOrNull()?.id,
         )
@@ -321,7 +322,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun updateQuickButtons(config: QuickButtonConfig) {
-        _settings.value = _settings.value.copy(quickButtons = config)
+        _settings.value = _settings.value.copy(quickButtons = config.withoutMascot())
         persist()
     }
 
@@ -560,7 +561,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             selectedStreamProfileId = profiles.firstOrNull()?.id ?: s.selectedStreamProfileId,
             serverProfiles = s.serverProfiles.map { it.copy(enabled = false) } +
                 config.serverProfiles.map { it.copy(enabled = it.id == activeId) },
-            quickButtons = config.quickButtons ?: s.quickButtons,
+            quickButtons = (config.quickButtons ?: s.quickButtons).withoutMascot(),
             onboardingDone = true,
         )
         _settings.value = cueScorePlayerId?.let { completed.withCueScoreWidget(it) } ?: completed

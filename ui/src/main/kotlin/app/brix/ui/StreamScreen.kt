@@ -714,16 +714,7 @@ private fun ImmersiveStream(
     var hudExpanded by remember { mutableStateOf(false) }
     var uiLocked by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
-    // Hoisted once: StatusOverlay and the mascot both need battery/thermal —
-    // each calling rememberTelemetry() itself meant two BroadcastReceiver
-    // registrations and two independent 5s thermal-poll loops running for
-    // the whole session.
     val telemetry = rememberTelemetry()
-
-    // Hoisted to the screen scope: the mascot can be placed in the corner slot
-    // or in the quick-button grid (or both), and every placement must show the
-    // same live stream state.
-    val mascotState = mascotStateFor(state, telemetry.thermalLevel)
 
     // Detaches only the local GL preview render pass — camera/GL/encoder
     // keep running (verified: StreamBase.stopPreview() only tears down the
@@ -748,7 +739,7 @@ private fun ImmersiveStream(
     // The panel has no reason to run above 60Hz while framing/streaming —
     // nothing on this screen needs it, and a free-running high refresh rate
     // (S21 defaults to 120Hz) is pure wasted power/heat driven by whatever
-    // is still animating (HUD, mascot). preferredRefreshRate is API 30+;
+    // is still animating (HUD). preferredRefreshRate is API 30+;
     // minSdk is 29, so this is a no-op (not a crash) on Android 10.
     LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return@LaunchedEffect
@@ -899,7 +890,7 @@ private fun ImmersiveStream(
                 val next = effects[(state.videoEffect.ordinal + 1) % effects.size]
                 streamer.setVideoEffect(next)
             }
-            ButtonAction.MASCOT -> Unit // purely decorative, no tap action
+            ButtonAction.MASCOT -> error("Legacy mascot action is not available")
             ButtonAction.POWER_SAVE -> { powerSaveOn = !powerSaveOn }
             ButtonAction.CUESCORE_SCOREBOARD -> onToggleCueScoreWidget()
             // Capture from the GL chain: this is a STREAM frame with overlays
@@ -1314,7 +1305,6 @@ private fun ImmersiveStream(
                     onAssign = { a -> onConfigChange(quickButtons.copy(cornerSlotAction = a)) },
                     onRemove = { onConfigChange(quickButtons.copy(cornerSlotAction = null)) },
                     modifier = Modifier.align(Alignment.BottomStart).padding(CORNER_SLOT_PADDING),
-                    mascotState = mascotState,
                 )
             }
         }
@@ -1329,7 +1319,6 @@ private fun ImmersiveStream(
             onConfigChange = onConfigChange,
             editing = editing,
             onEditingChange = { editing = it },
-            mascotState = mascotState,
             modifier = Modifier.width(132.dp),
         )
         }
@@ -1778,12 +1767,12 @@ private fun renderWidgetText(text: String, scale: Float): android.graphics.Bitma
  * Returns null if saving fails; the caller will notify the user.
  */
 private fun saveSnapshotToGallery(context: Context, bitmap: android.graphics.Bitmap): android.net.Uri? {
-    val name = "brix-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+    val name = "cuescore-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
         .format(java.util.Date()) + ".jpg"
     val values = android.content.ContentValues().apply {
         put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
         put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Brix")
+        put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CueScore Mobile Streaming")
     }
     val resolver = context.contentResolver
     return runCatching {
@@ -2296,19 +2285,6 @@ private fun thermalText(t: TelemetryView): String =
     else if (t.thermalLabelRes != 0) stringResource(t.thermalLabelRes)
     else "—"
 
-/** Real StreamState -> mascot expression. DONATION isn't wired here yet — it
- *  needs a transient "alert just fired" signal from the donation-overlay
- *  pipeline (OverlayController/OverlayJsBridge), which is a separate, later
- *  bit of plumbing; the state and its animation are ready for it. */
-private fun mascotStateFor(state: app.brix.streaming.StreamState, thermalLevel: Int): MascotState = when {
-    thermalLevel >= android.os.PowerManager.THERMAL_STATUS_SEVERE -> MascotState.OVERHEAT
-    state.status == StreamStatus.Connecting -> MascotState.RECONNECTING
-    state.status == StreamStatus.Connected && state.micMuted -> MascotState.MUTED
-    state.status == StreamStatus.Connected -> MascotState.LIVE
-    state.status == StreamStatus.Idle -> MascotState.IDLE
-    else -> MascotState.OFFLINE // Failed, Rejected, Disconnected
-}
-
 private fun firstRtt(state: app.brix.streaming.StreamState): String {
     val rtt = state.connections.firstOrNull { it.rtt > 0 }?.rtt
     return if (rtt != null) "${rtt}ms" else "—"
@@ -2629,7 +2605,6 @@ private fun SettingsPanelContent(
             SettingsRoute.About -> AboutScreen(
                 onBack = { onRoute(SettingsRoute.Menu) },
                 modifier = Modifier.weight(1f),
-                onStartupGuide = { viewModel.restartOnboarding() },
             )
             SettingsRoute.Diagnostics -> DiagnosticsScreen(
                 viewModel = viewModel,
