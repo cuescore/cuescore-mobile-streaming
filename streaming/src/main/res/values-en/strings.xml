@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notif_streaming_title">BRIX — streaming</string>
+    <string name="notif_streaming_title">CueScore — streaming</string>
     <string name="notif_channel_name">Streaming</string>
     <string name="notif_connecting">Connecting…</string>
     <string name="notif_reconnecting">Reconnecting…</string>

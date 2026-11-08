@@ -85,7 +85,7 @@
     <string name="audio_stereo">stereo</string>
     <string name="audio_mono">mono</string>
 
-    <string name="app_name">BRIX</string>
+    <string name="app_name">CueScore streaming</string>
 
     <string name="settings_stream">Stream</string>
     <string name="settings_camera">Camera</string>
@@ -109,6 +109,7 @@
     <string name="quick_button_corner_title">Corner button (bottom-left)</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">Version &amp; licenses</string>
+    <string name="settings_startup_guide">Startup guide</string>
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_hud">HUD</string>
     <string name="hud_battery">Battery</string>
@@ -327,6 +328,7 @@
     <string name="btn_pick_file">Pick a file</string>
     <string name="widget_hint_empty">Widgets are drawn over the video. Image and text are native, no browser; a web page keeps a browser running and costs about a tenth of a core.</string>
     <string name="button_snapshot">Snapshot</string>
+    <string name="button_cuescore_scoreboard">CueScore scoreboard</string>
     <string name="snapshot_saved">Frame saved to the gallery</string>
     <string name="snapshot_failed">Could not capture the frame</string>
     <string name="dialog_delete_widget_text">%1$s "%2$s" will be removed from every scene.</string>
@@ -340,20 +342,28 @@
     <string name="onboarding_perm_mic">Microphone</string>
     <string name="onboarding_perm_notifications">Notifications</string>
     <string name="onboarding_quality_title">Quality</string>
+    <string name="onboarding_cuescore_title">CueScore player profile</string>
+    <string name="onboarding_cuescore_text">Enter your CueScore player profile ID. We’ll verify it and add a full-screen scoreboard to your stream.</string>
+    <string name="onboarding_cuescore_player_id">Player profile ID</string>
+    <string name="onboarding_cuescore_verify">Verify profile</string>
+    <string name="onboarding_cuescore_verifying">Checking profile…</string>
+    <string name="onboarding_cuescore_verified">Verified player: %1$s</string>
+    <string name="onboarding_cuescore_not_found">No CueScore player profile was found for that ID.</string>
+    <string name="onboarding_cuescore_lookup_failed">Could not check the profile. Check your connection and try again.</string>
     <!-- Язык, на котором написан ЭТОТ файл. По нему экран выбора языка
          отличает наш перевод от системных языков Android. -->
     <string name="locale_tag" translatable="false">en</string>
     <string name="onboarding_welcome_title">Hi there!</string>
-    <string name="onboarding_welcome_p1">Welcome to Brix — an app for IRL streaming.</string>
-    <string name="onboarding_welcome_p2">We keep working on performance, so your feedback matters a lot. Please share reports from different devices (Settings → About → Device passport): we have just one test phone so far, and every report helps the app grow.</string>
-    <string name="onboarding_welcome_p3">This is an early beta, and features are still being added. If you’d like something new, tell us on GitHub.</string>
+    <string name="onboarding_welcome_p1">Welcome to CueScore streaming — an app for streaming billiard matches.</string>
+    <string name="onboarding_welcome_p2">An overlay is added to the stream with any match started for your CueScore player profile.</string>
+    <string name="onboarding_welcome_p3">What did the white ball say to the other balls? Get in line, there’s a cue here..</string>
     <string name="onboarding_welcome_p4">Happy streaming!</string>
     <string name="onboarding_server_title">Where to stream</string>
-    <string name="onboarding_server_text">Set the receiver your stream goes to. You can also add servers later in the app settings.</string>
+    <string name="onboarding_server_text">Set the receiver your stream goes to. You can edit this later in the app settings as well.</string>
     <string name="onboarding_stream_id">Stream ID (streamid)</string>
     <string name="onboarding_stream_id_hint">Optional: fill in only if streamid isn’t already part of the address above.</string>
     <string name="onboarding_import_title">Bring settings from another device</string>
-    <string name="onboarding_import_text">Paste a configuration link from another Brix, Moblin or IRL Pro.</string>
+    <string name="onboarding_import_text">Paste a configuration link from Brix, Moblin or IRL Pro.</string>
     <string name="onboarding_quality_text">Resolution, frame rate and bitrate. All of it can be changed later in the stream profile.</string>
     <string name="onboarding_bitrate">%1$d kbps</string>
     <string name="onboarding_preset_720p30">A safe start on a mobile network</string>

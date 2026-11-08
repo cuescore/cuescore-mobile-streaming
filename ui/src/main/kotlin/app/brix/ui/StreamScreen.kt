@@ -266,6 +266,9 @@ fun StreamScreen(
     // настройки. Отдельный флаг здесь не годится — он поднимается раньше, чем
     // настройки доезжают до экрана, и в эту щель приглашение и пролезало.
     val settingsReady = !settingsViewModel.isPlaceholder(settings)
+    LaunchedEffect(settingsReady, settings.widgets, settings.quickButtons) {
+        if (settingsReady) settingsViewModel.ensureCueScoreQuickButton()
+    }
 
     val twitchViewers by settingsViewModel.twitch.viewers.collectAsState()
     val kickViewers by settingsViewModel.kickViewers.collectAsState()
@@ -299,6 +302,12 @@ fun StreamScreen(
                     recordStream = settings.advanced.recordStream,
                     debugLog = settings.advanced.debugLog,
                     quickButtons = settings.quickButtons,
+                    cueScoreWidgetEnabled = settings.widgets.any {
+                        it.kind == WidgetKind.WEB &&
+                            isCueScoreScoreboardUrl(it.url) &&
+                            it.enabled
+                    },
+                    onToggleCueScoreWidget = { settingsViewModel.toggleCueScoreWidget() },
                     autoHideHud = settings.appearance.autoHideHud,
                     hud = settings.hud,
                     chat = settings.chat,
@@ -387,6 +396,8 @@ private fun ImmersiveStream(
     recordStream: Boolean,
     debugLog: Boolean,
     quickButtons: QuickButtonConfig,
+    cueScoreWidgetEnabled: Boolean,
+    onToggleCueScoreWidget: () -> Unit,
     autoHideHud: Boolean,
     hud: app.brix.core.HudConfig,
     chat: app.brix.core.ChatSettings,
@@ -426,7 +437,14 @@ private fun ImmersiveStream(
     }
     browserWidgets.forEach { widget ->
         key(widget.id) {
-            BrowserWidgetHost(widget = widget, context = context, streamer = streamer, shown = overlayShown)
+            BrowserWidgetHost(
+                widget = widget,
+                context = context,
+                streamer = streamer,
+                shown = overlayShown,
+                outputWidth = profile?.video?.width ?: 1280,
+                outputHeight = profile?.video?.height ?: 720,
+            )
         }
     }
     imageWidgets.forEach { widget ->
@@ -685,6 +703,7 @@ private fun ImmersiveStream(
         if (state.videoEffect != app.brix.streaming.VideoEffect.NONE) add(ButtonAction.VIDEO_EFFECT)
         if (hudPinned) add(ButtonAction.INFO)
         if (powerSaveOn) add(ButtonAction.POWER_SAVE)
+        if (cueScoreWidgetEnabled) add(ButtonAction.CUESCORE_SCOREBOARD)
     }
     // Ответ на нажатие «Снимок»: без него кнопка молчит, и непонятно, снялось
     // ли что-нибудь. Строка гаснет сама.
@@ -885,6 +904,7 @@ private fun ImmersiveStream(
             }
             ButtonAction.MASCOT -> Unit // purely decorative, no tap action
             ButtonAction.POWER_SAVE -> { powerSaveOn = !powerSaveOn }
+            ButtonAction.CUESCORE_SCOREBOARD -> onToggleCueScoreWidget()
             // Снимок берётся из GL-цепочки, то есть это кадр ЭФИРА — с
             // оверлеями и эффектами, ровно то, что видит зритель. Отдельный
             // фотоснимок с камеры показал бы другое изображение и сбивал бы
@@ -1461,31 +1481,51 @@ private fun BrowserWidgetHost(
     context: Context,
     streamer: LiveStreamer,
     shown: Boolean,
+    outputWidth: Int,
+    outputHeight: Int,
 ) {
-    val webView = remember(widget.url, widget.enabled) {
+    val webView = remember(widget.url, widget.enabled, outputWidth, outputHeight) {
         if (widget.enabled && widget.url.isNotBlank()) {
-            WebView(context).apply {
+            val webViewConfiguration = android.content.res.Configuration(context.resources.configuration).apply {
+                densityDpi = android.util.DisplayMetrics.DENSITY_DEFAULT
+            }
+            val webViewContext = android.view.ContextThemeWrapper(
+                context.createConfigurationContext(webViewConfiguration),
+                context.theme,
+            )
+            val viewportScript = """
+                (function() {
+                    var viewport = document.querySelector('meta[name="viewport"]');
+                    if (!viewport) {
+                        viewport = document.createElement('meta');
+                        viewport.name = 'viewport';
+                        document.head.appendChild(viewport);
+                    }
+                    viewport.content = 'width=$outputWidth,height=$outputHeight,initial-scale=1,maximum-scale=1,user-scalable=no';
+                })();
+            """.trimIndent()
+            WebView(webViewContext).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
-                settings.loadWithOverviewMode = true
+                // Overview mode zooms page content to fit the physical phone
+                // viewport, defeating the stream-sized CSS viewport below.
+                settings.loadWithOverviewMode = false
                 settings.useWideViewPort = true
+                setInitialScale(100)
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                // REQUIRED for the snapshot loop below to capture anything at
-                // all. A hardware-accelerated WebView renders through its own
-                // hardware layer, and drawing it into a Bitmap-backed (i.e.
-                // software) Canvas yields the background and nothing else — so
-                // every captured frame was blank and the widget never appeared
-                // in the stream, donation or not. Confirmed in the
-                // 20260831_001056 capture: the page was laid out at 720x720 and
-                // actively drawing (WV.sf.onDraw, repeated "finish load image"),
-                // while the overlay stayed empty.
-                //
-                // This is a workaround, not the destination: software layer
-                // means the page rasterises on the CPU, which is exactly the
-                // cost the ViewSurfaceFilterRender rework removes.
+                // Software rendering is required for WebView.draw() to capture
+                // the page into the bitmap frames sent to the video overlay.
                 setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+                webViewClient = object : android.webkit.WebViewClient() {
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        view.evaluateJavascript(viewportScript, null)
+                    }
+                }
                 loadUrl(widget.url)
-                layoutParams = android.view.ViewGroup.LayoutParams(720, 720)
+                layoutParams = android.view.ViewGroup.LayoutParams(
+                    outputWidth.coerceAtLeast(1),
+                    outputHeight.coerceAtLeast(1),
+                )
                 (context as? android.app.Activity)?.addContentView(this, layoutParams)
                 translationX = -10_000f
                 translationY = -10_000f
@@ -1516,13 +1556,9 @@ private fun BrowserWidgetHost(
             widget.posY,
             app.brix.streaming.overlay.OverlaySize(widget.width, widget.height),
         )
-        // Double-buffered, not one fresh bitmap per tick: a 720x720 ARGB_8888
-        // frame is ~2 MB, and at the default 200ms refresh that allocated
-        // ~10 MB/s of garbage for the whole session on a phone that is already
-        // fighting thermal throttling. Two buffers rather than one because the
-        // GL filter uploads the bitmap on the render thread some time after
-        // updateLiveOverlayFrame() returns — alternating gives that upload a
-        // full refresh period before we draw over the buffer again.
+        // Double-buffer frames at the configured output resolution so the
+        // browser source's viewport and captured frame match the encoded video.
+        // Two buffers are needed because the GL filter uploads asynchronously.
         //
         // Deliberately never recycle()d, only dropped for the GC: the filter
         // uploads the bitmap asynchronously on the GL thread, and detach is
@@ -2567,6 +2603,7 @@ private fun SettingsPanelContent(
             SettingsRoute.About -> AboutScreen(
                 onBack = { onRoute(SettingsRoute.Menu) },
                 modifier = Modifier.weight(1f),
+                onStartupGuide = { viewModel.restartOnboarding() },
             )
             SettingsRoute.Diagnostics -> DiagnosticsScreen(
                 viewModel = viewModel,

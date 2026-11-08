@@ -7,7 +7,11 @@ import androidx.lifecycle.viewModelScope
 import app.brix.core.withPriority
 import app.brix.core.ConnectionPriority
 import app.brix.core.AppSettings
+import app.brix.core.ButtonAction
 import app.brix.core.Ids
+import app.brix.core.QuickButtonColumn
+import app.brix.core.QuickButtonSlot
+import app.brix.core.QuickButtonWidth
 import app.brix.core.Scene
 import app.brix.core.ServerProfile
 import app.brix.core.ServerType
@@ -33,6 +37,12 @@ import app.brix.streaming.twitch.TWITCH_RTMP_INGEST
 import app.brix.streaming.twitch.TwitchSession
 import app.brix.core.defaultAppSettings
 import app.brix.core.withStreamProfilesEnsured
+import kotlinx.coroutines.withContext
+import org.json.JSONException
+import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +50,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+internal const val CUESCORE_SCOREBOARD_URL_PREFIX =
+    "https://cuescore.com/scoreboard/stream/?playerId="
+private const val LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX =
+    "https://cuescore.com/scoreboard/stream/?tableId="
+
+internal sealed interface CueScorePlayerLookupResult {
+    data class Found(val name: String) : CueScorePlayerLookupResult
+    data object NotFound : CueScorePlayerLookupResult
+    data object Unavailable : CueScorePlayerLookupResult
+}
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore.create(application)
@@ -336,6 +357,53 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         persist()
     }
 
+    fun toggleCueScoreWidget() {
+        val current = _settings.value
+        val widget = current.widgets.firstOrNull {
+            it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url)
+        } ?: return
+        val enabled = !widget.enabled
+        _settings.value = current.copy(
+            widgets = current.widgets.map { if (it.id == widget.id) it.copy(enabled = enabled) else it },
+            scenes = if (enabled) {
+                current.scenes.map { scene ->
+                    if (scene.id == current.selectedSceneId && widget.id !in scene.widgetIds) {
+                        scene.copy(widgetIds = scene.widgetIds + widget.id)
+                    } else {
+                        scene
+                    }
+                }
+            } else {
+                current.scenes
+            },
+        )
+        persist()
+    }
+
+    fun ensureCueScoreQuickButton() {
+        val original = _settings.value
+        val current = original.copy(
+            widgets = original.widgets.map { widget ->
+                if (widget.kind == WidgetKind.WEB && widget.url.startsWith(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX)) {
+                    widget.copy(
+                        url = CUESCORE_SCOREBOARD_URL_PREFIX +
+                            widget.url.removePrefix(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX),
+                    )
+                } else {
+                    widget
+                }
+            },
+        )
+        val hasScoreboard = current.widgets.any {
+            it.kind == WidgetKind.WEB && it.url.startsWith(CUESCORE_SCOREBOARD_URL_PREFIX)
+        }
+        val updated = if (hasScoreboard) current.withCueScoreQuickButton() else current
+        if (updated != original) {
+            _settings.value = updated
+            persist()
+        }
+    }
+
     fun deleteWidget(id: String) {
         _settings.value = _settings.value.copy(
             widgets = _settings.value.widgets.filterNot { it.id == id },
@@ -377,7 +445,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      * снова открыло бы мастер поверх них. Сервер, если задан, сразу делается
      * единственным активным — экран эфира берёт первый включённый.
      */
-    fun completeOnboarding(server: ServerProfile?, preset: StreamPreset?) {
+    fun completeOnboarding(
+        server: ServerProfile?,
+        preset: StreamPreset?,
+        cueScorePlayerId: String? = null,
+    ) {
         val s = _settings.value
         val servers = if (server == null) {
             s.serverProfiles
@@ -402,7 +474,54 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
-        _settings.value = s.copy(serverProfiles = servers, streamProfiles = profiles, onboardingDone = true)
+        val appearance = if (s.appearance.language.isBlank()) s.appearance.copy(language = "en") else s.appearance
+        val completed = s.copy(
+            serverProfiles = servers,
+            streamProfiles = profiles,
+            appearance = appearance,
+            onboardingDone = true,
+        )
+        _settings.value = cueScorePlayerId?.let { completed.withCueScoreWidget(it) } ?: completed
+        persist()
+    }
+
+    internal suspend fun lookupCueScorePlayer(playerId: String): CueScorePlayerLookupResult = withContext(Dispatchers.IO) {
+        val numericId = playerId.toLongOrNull()
+            ?.takeIf { it > 0 }
+            ?: return@withContext CueScorePlayerLookupResult.NotFound
+        val connection = URL("https://api.cuescore.com/participant/?id=$numericId")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                return@withContext if (status == HttpURLConnection.HTTP_NOT_FOUND) {
+                    CueScorePlayerLookupResult.NotFound
+                } else {
+                    CueScorePlayerLookupResult.Unavailable
+                }
+            }
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            val participant = JSONObject(response)
+            val name = participant.optString("name")
+            if (participant.optLong("playerId", -1) == numericId && name.isNotBlank()) {
+                CueScorePlayerLookupResult.Found(name)
+            } else {
+                CueScorePlayerLookupResult.NotFound
+            }
+        } catch (_: IOException) {
+            CueScorePlayerLookupResult.Unavailable
+        } catch (_: JSONException) {
+            CueScorePlayerLookupResult.Unavailable
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    fun restartOnboarding() {
+        _settings.value = _settings.value.copy(onboardingDone = false)
         persist()
     }
 
@@ -415,11 +534,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      * привезённый профиль, а активным делаем первый включённый сервер — ровно
      * один, как требует экран эфира (см. [setActiveServer]).
      */
-    fun completeOnboardingWithImport(config: app.brix.core.SharedConfig) {
+    fun completeOnboardingWithImport(
+        config: app.brix.core.SharedConfig,
+        cueScorePlayerId: String? = null,
+    ) {
         val s = _settings.value
         val activeId = (config.serverProfiles.firstOrNull { it.enabled } ?: config.serverProfiles.firstOrNull())?.id
         val profiles = config.streamProfiles.ifEmpty { s.streamProfiles }
-        _settings.value = s.copy(
+        val completed = s.copy(
             streamProfiles = profiles,
             selectedStreamProfileId = profiles.firstOrNull()?.id ?: s.selectedStreamProfileId,
             serverProfiles = s.serverProfiles.map { it.copy(enabled = false) } +
@@ -427,7 +549,68 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             quickButtons = config.quickButtons ?: s.quickButtons,
             onboardingDone = true,
         )
+        _settings.value = cueScorePlayerId?.let { completed.withCueScoreWidget(it) } ?: completed
         persist()
+    }
+
+    private fun AppSettings.withCueScoreWidget(playerId: String): AppSettings {
+        val numericId = playerId.toLongOrNull()?.takeIf { it > 0 } ?: return this
+        val scoreboardUrl = "$CUESCORE_SCOREBOARD_URL_PREFIX$numericId"
+        val existing = widgets.firstOrNull {
+            it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url)
+        }
+        val widget = SceneWidget(
+            id = existing?.id ?: Ids.newId(),
+            kind = WidgetKind.WEB,
+            name = "CueScore scoreboard",
+            enabled = true,
+            posX = 0.5f,
+            posY = 0.5f,
+            width = 1f,
+            height = 1f,
+            url = scoreboardUrl,
+        )
+        val updatedWidgets = if (existing == null) widgets + widget else {
+            widgets.map { if (it.id == existing.id) widget else it }
+        }
+
+        return copy(
+            widgets = updatedWidgets,
+            scenes = scenes.map { scene ->
+                if (scene.id == selectedSceneId && widget.id !in scene.widgetIds) {
+                    scene.copy(widgetIds = scene.widgetIds + widget.id)
+                } else {
+                    scene
+                }
+            },
+        ).withCueScoreQuickButton()
+    }
+
+    private fun AppSettings.withCueScoreQuickButton(): AppSettings {
+        if (ButtonAction.CUESCORE_SCOREBOARD in quickButtons.slots.map { it.action }) return this
+        val occupiedCells = quickButtons.slots.flatMap { slot ->
+            if (slot.width == QuickButtonWidth.LARGE) {
+                listOf(
+                    slot.rowIndex to QuickButtonColumn.LEFT,
+                    slot.rowIndex to QuickButtonColumn.RIGHT,
+                )
+            } else {
+                listOfNotNull(slot.columnPosition?.let { slot.rowIndex to it })
+            }
+        }.toSet()
+        val freeCell = (0..4).asSequence().flatMap { row ->
+            sequenceOf(QuickButtonColumn.LEFT, QuickButtonColumn.RIGHT).map { column -> row to column }
+        }.firstOrNull { it !in occupiedCells } ?: return this
+        return copy(
+            quickButtons = quickButtons.copy(
+                slots = quickButtons.slots + QuickButtonSlot(
+                    ButtonAction.CUESCORE_SCOREBOARD,
+                    QuickButtonWidth.SMALL,
+                    freeCell.first,
+                    freeCell.second,
+                ),
+            ),
+        )
     }
 
     fun deleteCustomPreset(name: String) {
@@ -503,6 +686,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (commit) persist()
     }
 }
+
+internal fun isCueScoreScoreboardUrl(url: String): Boolean =
+    url.startsWith(CUESCORE_SCOREBOARD_URL_PREFIX) ||
+        url.startsWith(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX)
 
 fun newStreamProfile(name: String): StreamProfile =
     StreamProfile(id = Ids.newId(), name = name)

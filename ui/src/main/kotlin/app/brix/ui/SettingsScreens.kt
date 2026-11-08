@@ -120,18 +120,25 @@ fun CategoryRail(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val items = listOf(
-        SettingsCategory.STREAM to R.string.settings_cat_stream,
-        SettingsCategory.CAMERA to R.string.settings_cat_camera,
-        SettingsCategory.AUDIO to R.string.settings_cat_audio,
-        SettingsCategory.APPEARANCE to R.string.settings_cat_appearance,
-        SettingsCategory.ADVANCED to R.string.settings_cat_advanced,
-        SettingsCategory.MOBLINK to R.string.settings_cat_moblink,
-        SettingsCategory.CHAT to R.string.settings_cat_chat,
-        SettingsCategory.INTEGRATIONS to R.string.settings_cat_integrations,
-        SettingsCategory.CONFIG to R.string.settings_cat_config,
-        SettingsCategory.ABOUT to R.string.settings_cat_about,
+    val advancedCategories = setOf(
+        SettingsCategory.ADVANCED,
+        SettingsCategory.MOBLINK,
+        SettingsCategory.INTEGRATIONS,
+        SettingsCategory.CONFIG,
     )
+    val items = buildList {
+        add(SettingsCategory.STREAM to R.string.settings_cat_stream)
+        add(SettingsCategory.CAMERA to R.string.settings_cat_camera)
+        add(SettingsCategory.AUDIO to R.string.settings_cat_audio)
+        add(SettingsCategory.APPEARANCE to R.string.settings_cat_appearance)
+        add(SettingsCategory.ADVANCED to R.string.settings_cat_advanced)
+        if (selected in advancedCategories) {
+            add(SettingsCategory.MOBLINK to R.string.settings_cat_moblink)
+            add(SettingsCategory.INTEGRATIONS to R.string.settings_cat_integrations)
+            add(SettingsCategory.CONFIG to R.string.settings_cat_config)
+        }
+        add(SettingsCategory.ABOUT to R.string.settings_cat_about)
+    }
     // Консольное меню, а не список карточек: моноширинный текст и тонкая
     // полоса-индикатор слева от выбранного пункта — тот же терминальный
     // характер, что уже есть у маскота и вордмарка (design/Brix/assets),
@@ -150,7 +157,6 @@ fun CategoryRail(
         ) {
             Text(
                 text = stringResource(R.string.settings_title),
-                fontFamily = FontFamily.Monospace,
                 fontSize = MaterialTheme.typography.titleMedium.fontSize,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
@@ -165,13 +171,15 @@ fun CategoryRail(
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        // Scrollable: 8 categories (since Moblink/Config were added) no longer
-        // fit the fixed-height rail on a landscape phone screen — without this
-        // the last entries (About) were silently clipped off the bottom with
-        // no way to reach them.
+        // Scrollable: the expanded Advanced submenu can make the category rail
+        // taller than the fixed-height landscape screen.
+        // Without scrolling the last entries would be silently clipped off.
         Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             items.forEachIndexed { index, (cat, labelRes) ->
                 val active = cat == selected
+                val nested = cat == SettingsCategory.MOBLINK ||
+                    cat == SettingsCategory.INTEGRATIONS ||
+                    cat == SettingsCategory.CONFIG
                 Row(
                     // IntrinsicSize.Min — иначе внутри прокручиваемого Column
                     // высота строки для измерения бесконечна, и Box.fillMaxHeight()
@@ -191,7 +199,6 @@ fun CategoryRail(
                     )
                     Text(
                         text = stringResource(labelRes),
-                        fontFamily = FontFamily.Monospace,
                         fontSize = MaterialTheme.typography.bodyMedium.fontSize,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
 
@@ -203,7 +210,12 @@ fun CategoryRail(
                         // Было 13 — девять строк по такой высоте не помещались
                         // в альбомный экран и требовали прокрутки ради двух
                         // последних пунктов.
-                        modifier = Modifier.padding(start = 11.dp, top = 9.dp, bottom = 9.dp, end = 14.dp),
+                        modifier = Modifier.padding(
+                            start = if (nested) 25.dp else 11.dp,
+                            top = 9.dp,
+                            bottom = 9.dp,
+                            end = 14.dp,
+                        ),
                     )
                 }
                 if (index != items.lastIndex) {
@@ -302,7 +314,8 @@ fun CategoryHome(
                     BrixCard {
                         BrixNavRow(stringResource(R.string.settings_about_version), divider = true, onClick = { onRoute(SettingsRoute.About) })
                         BrixNavRow(stringResource(R.string.settings_diagnostics), divider = true, onClick = { onRoute(SettingsRoute.Diagnostics) })
-                        BrixNavRow(stringResource(R.string.settings_device_passport), divider = false, onClick = { onRoute(SettingsRoute.DevicePassport) })
+                        BrixNavRow(stringResource(R.string.settings_device_passport), divider = true, onClick = { onRoute(SettingsRoute.DevicePassport) })
+                        BrixNavRow(stringResource(R.string.settings_startup_guide), divider = false, onClick = { viewModel.restartOnboarding() })
                     }
                 }
             }
@@ -358,7 +371,6 @@ internal fun SettingsTopBar(title: String, onBack: (() -> Unit)? = null) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurface,
         )
     }
@@ -390,7 +402,6 @@ internal fun SettingsEditTopBar(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            fontFamily = FontFamily.Monospace,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -412,7 +423,6 @@ internal fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.labelMedium,
-        fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
     )
@@ -748,9 +758,7 @@ fun AppearanceSettingsScreen(
     }
 }
 
-/** Display name for a locale tag, in that locale's own language (e.g. "en"
- *  -> "English", "ru" -> "Русский") — so a language is recognizable even to
- *  someone who can't currently read the UI. */
+/** Display name for a locale tag in that locale's own language. */
 /**
  * Языки, на которые приложение действительно переведено.
  *
@@ -864,6 +872,7 @@ fun AdvancedSettingsScreen(
 fun AboutScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onStartupGuide: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val version = remember(context) {
@@ -897,8 +906,13 @@ fun AboutScreen(
                     BrixNavRow(
                         stringResource(R.string.app_name),
                         value = version,
-                        divider = false,
+                        divider = true,
                         onClick = {},
+                    )
+                    BrixNavRow(
+                        stringResource(R.string.settings_startup_guide),
+                        divider = false,
+                        onClick = onStartupGuide,
                     )
                 }
             }

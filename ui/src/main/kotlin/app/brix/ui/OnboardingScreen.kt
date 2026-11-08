@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,9 +64,9 @@ import app.brix.core.SettingsDeepLink
 import app.brix.core.SharedConfig
 import app.brix.core.StreamPreset
 import app.brix.core.defaultStreamPresets
-import app.brix.core.normalizeLanguageTag
+import kotlinx.coroutines.launch
 
-private enum class OnboardingStep { WELCOME, LANGUAGE, PERMISSIONS, SERVER, QUALITY, DONE }
+private enum class OnboardingStep { WELCOME, CUESCORE, PERMISSIONS, SERVER, QUALITY, DONE }
 
 // Свой список, а не общий из StreamScreen: там он приватный и разделён на
 // «обязательные» и «уведомления» ради ворот эфира. Здесь просим всё разом —
@@ -110,6 +111,12 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
     var serverUrl by rememberSaveable { mutableStateOf("") }
     var serverKey by rememberSaveable { mutableStateOf("") }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
+    var cueScorePlayerId by rememberSaveable { mutableStateOf("") }
+    var verifiedCueScorePlayerId by rememberSaveable { mutableStateOf<String?>(null) }
+    var cueScorePlayerName by rememberSaveable { mutableStateOf<String?>(null) }
+    var cueScoreLookupMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var cueScoreLookupInProgress by rememberSaveable { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
     // По умолчанию — то, что уже стоит в профиле, чтобы «Далее» без выбора
     // ничего не меняло.
     val currentVideo = settings.selectedStreamProfile()?.video
@@ -145,7 +152,11 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
         } else {
             null
         }
-        viewModel.completeOnboarding(server, defaultStreamPresets[presetIndex])
+        viewModel.completeOnboarding(
+            server,
+            defaultStreamPresets[presetIndex],
+            verifiedCueScorePlayerId,
+        )
     }
 
     Column(
@@ -168,8 +179,13 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            if (step != OnboardingStep.DONE) {
-                TextButton(onClick = { viewModel.completeOnboarding(null, null) }) {
+            if (step != OnboardingStep.DONE &&
+                step != OnboardingStep.WELCOME &&
+                step != OnboardingStep.CUESCORE
+            ) {
+                TextButton(onClick = {
+                    viewModel.completeOnboarding(null, null, verifiedCueScorePlayerId)
+                }) {
                     Text(stringResource(R.string.onboarding_skip_all), maxLines = 1)
                 }
             }
@@ -193,9 +209,71 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                     StepText(stringResource(R.string.onboarding_welcome_p4))
                 }
 
-                OnboardingStep.LANGUAGE -> {
-                    StepTitle(stringResource(R.string.appearance_language))
-                    LanguageChoice(viewModel)
+                OnboardingStep.CUESCORE -> {
+                    StepTitle(stringResource(R.string.onboarding_cuescore_title))
+                    StepText(stringResource(R.string.onboarding_cuescore_text))
+                    BrixCard {
+                        OutlinedTextField(
+                            value = cueScorePlayerId,
+                            onValueChange = {
+                                cueScorePlayerId = it
+                                verifiedCueScorePlayerId = null
+                                cueScorePlayerName = null
+                                cueScoreLookupMessage = null
+                            },
+                            label = { Text(stringResource(R.string.onboarding_cuescore_player_id)) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            enabled = !cueScoreLookupInProgress,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        FilledTonalButton(
+                            onClick = {
+                                val playerId = cueScorePlayerId.trim()
+                                coroutineScope.launch {
+                                    cueScoreLookupInProgress = true
+                                    verifiedCueScorePlayerId = null
+                                    cueScorePlayerName = null
+                                    cueScoreLookupMessage = null
+                                    try {
+                                        when (val result = viewModel.lookupCueScorePlayer(playerId)) {
+                                            is CueScorePlayerLookupResult.Found -> {
+                                                verifiedCueScorePlayerId = playerId
+                                                cueScorePlayerName = result.name
+                                            }
+                                            CueScorePlayerLookupResult.NotFound -> {
+                                                cueScoreLookupMessage = context.getString(R.string.onboarding_cuescore_not_found)
+                                            }
+                                            CueScorePlayerLookupResult.Unavailable -> {
+                                                cueScoreLookupMessage = context.getString(R.string.onboarding_cuescore_lookup_failed)
+                                            }
+                                        }
+                                    } finally {
+                                        cueScoreLookupInProgress = false
+                                    }
+                                }
+                            },
+                            enabled = cueScorePlayerId.trim().toLongOrNull()?.let { it > 0 } == true &&
+                                !cueScoreLookupInProgress,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (cueScoreLookupInProgress) {
+                                        R.string.onboarding_cuescore_verifying
+                                    } else {
+                                        R.string.onboarding_cuescore_verify
+                                    },
+                                ),
+                            )
+                        }
+                        cueScorePlayerName?.let { name ->
+                            StepText(stringResource(R.string.onboarding_cuescore_verified, name))
+                        }
+                        cueScoreLookupMessage?.let { message ->
+                            Text(message, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
 
                 OnboardingStep.PERMISSIONS -> {
@@ -324,6 +402,8 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
             }
             Button(
                 onClick = { if (step == OnboardingStep.DONE) finish() else stepIndex++ },
+                enabled = step != OnboardingStep.CUESCORE ||
+                    verifiedCueScorePlayerId == cueScorePlayerId.trim(),
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
@@ -351,7 +431,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                 pendingImport = null
                 // Привезённое уже содержит и сервер, и качество — дальнейшие
                 // шаги их только перетёрли бы, поэтому мастер на этом кончается.
-                viewModel.completeOnboardingWithImport(config)
+                viewModel.completeOnboardingWithImport(config, verifiedCueScorePlayerId)
             },
         ) {
             StepText(
@@ -391,7 +471,6 @@ private fun StepTitle(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleLarge,
-        fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface,
     )
@@ -438,7 +517,6 @@ private fun PresetTile(preset: StreamPreset, note: String?, selected: Boolean, o
                 Text(
                     presetTitle(preset),
                     style = MaterialTheme.typography.titleMedium,
-                    fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     color = if (selected) scheme.primary else scheme.onSurface,
                 )
@@ -449,7 +527,6 @@ private fun PresetTile(preset: StreamPreset, note: String?, selected: Boolean, o
             Text(
                 stringResource(R.string.onboarding_bitrate, preset.videoBitrateKbps),
                 style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
                 color = if (selected) scheme.primary else scheme.onSurfaceVariant,
             )
         }
@@ -461,25 +538,6 @@ private fun PresetTile(preset: StreamPreset, note: String?, selected: Boolean, o
 private fun presetTitle(p: StreamPreset): String {
     val res = if (p.height >= 2160) "4K" else "${p.height}p"
     return "$res@${p.fps}"
-}
-
-@Composable
-private fun LanguageChoice(viewModel: SettingsViewModel) {
-    val settings by viewModel.settings.collectAsState()
-    val appearance = settings.appearance
-    val selectedTag = normalizeLanguageTag(appearance.language)
-    val context = LocalContext.current
-    val options = remember(context) { listOf("") + supportedAppLanguages(context) }
-    BrixCard {
-        options.forEachIndexed { i, tag ->
-            BrixNavRow(
-                title = if (tag.isEmpty()) stringResource(R.string.language_auto) else displayNameForLanguageTag(tag),
-                value = if (selectedTag == tag) "✓" else null,
-                divider = i != options.lastIndex,
-                onClick = { viewModel.updateAppearance(appearance.copy(language = tag)) },
-            )
-        }
-    }
 }
 
 @Composable
@@ -496,7 +554,6 @@ private fun PermissionRow(permission: String, granted: Boolean) {
         Text(
             stringResource(label),
             style = MaterialTheme.typography.bodyMedium,
-            fontFamily = FontFamily.Monospace,
             modifier = Modifier.weight(1f),
         )
         Text(
@@ -517,7 +574,6 @@ private fun ImportCard(onImported: (SharedConfig) -> Unit) {
             Text(
                 stringResource(R.string.onboarding_import_title),
                 style = MaterialTheme.typography.titleSmall,
-                fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
             )
             StepText(stringResource(R.string.onboarding_import_text))

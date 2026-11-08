@@ -176,6 +176,7 @@ fun ButtonAction.icon(active: Boolean = false): ImageVector = when (this) {
     ButtonAction.MIC -> if (active) Icons.Filled.SettingsVoice else Icons.Filled.KeyboardVoice
     ButtonAction.SCENE -> Icons.Filled.Layers
     ButtonAction.SNAPSHOT -> Icons.Filled.PhotoCamera
+    ButtonAction.CUESCORE_SCOREBOARD -> Icons.Filled.Layers
 }
 
 @Composable
@@ -197,6 +198,7 @@ fun ButtonAction.label(): String = stringResource(
         ButtonAction.MIC -> R.string.button_mic
         ButtonAction.SCENE -> R.string.button_scene
         ButtonAction.SNAPSHOT -> R.string.button_snapshot
+        ButtonAction.CUESCORE_SCOREBOARD -> R.string.button_cuescore_scoreboard
     },
 )
 
@@ -858,13 +860,11 @@ private fun SlotMenu(
                 Text(
                     if (existing == null) stringResource(R.string.quick_button_add) else stringResource(R.string.quick_button_edit),
                     style = MaterialTheme.typography.titleMedium,
-                    fontFamily = FontFamily.Monospace,
                 )
                 Spacer(Modifier.height(16.dp))
                 Text(
                     stringResource(R.string.quick_button_size),
                     style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FontFamily.Monospace,
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1058,7 +1058,6 @@ fun QuickButtonsConfigScreen(
             Text(
                 stringResource(R.string.quick_button_add),
                 style = MaterialTheme.typography.titleSmall,
-                fontFamily = FontFamily.Monospace,
             )
             Spacer(Modifier.height(8.dp))
             if (available.isEmpty()) {
@@ -1083,7 +1082,6 @@ fun QuickButtonsConfigScreen(
             Text(
                 stringResource(R.string.quick_button_grid_title),
                 style = MaterialTheme.typography.titleSmall,
-                fontFamily = FontFamily.Monospace,
             )
             Spacer(Modifier.height(8.dp))
             slots.forEachIndexed { index, slot ->
@@ -1139,7 +1137,6 @@ fun QuickButtonsConfigScreen(
             Text(
                 stringResource(R.string.quick_button_corner_title),
                 style = MaterialTheme.typography.titleSmall,
-                fontFamily = FontFamily.Monospace,
             )
             Spacer(Modifier.height(8.dp))
             Box {

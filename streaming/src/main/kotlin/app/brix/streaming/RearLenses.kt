@@ -17,53 +17,75 @@ data class RearLens(
     val zoom: Float = 1f,
 )
 
+internal data class RearCameraInfo(
+    val id: String,
+    val focalLength: Float,
+    val maxZoom: Float,
+)
+
 /**
  * Enumerate rear lenses with Moblin-style zoom labels (0.5x / 1x / 3x).
  *
  * Zoom factor is relative to the device's MAIN rear camera (focal in the
- * 4.5–8mm range). Includes physical sub-cameras of logical multi-camera
- * devices (API 30+). Phones whose "tele" is a crop-zoom sensor (e.g. Galaxy
- * S21: only main + ultra-wide are exposed) get a VIRTUAL tele pill backed by
- * the main camera at 3x zoom ratio.
+ * 4.5–8mm range). Only logical camera IDs that the streaming camera
+ * implementation can open directly are offered; physical IDs exposed by a
+ * logical camera are excluded. Phones whose "tele" is a crop-zoom sensor get a
+ * virtual tele pill backed by the main camera at 3x zoom ratio.
  */
 fun Context.rearLenses(): List<RearLens> {
     val manager = getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return emptyList()
-    data class Raw(val id: String, val focal: Float, val zoomRange: android.util.Range<Float>?)
-
-    val raws = mutableListOf<Raw>()
-    fun addIfBack(id: String) {
-        val chars = runCatching { manager.getCameraCharacteristics(id) }.getOrNull() ?: return
-        if (chars.get(CameraCharacteristics.LENS_FACING) != CameraCharacteristics.LENS_FACING_BACK) return
+    val characteristics = manager.cameraIdList.mapNotNull { id ->
+        runCatching { manager.getCameraCharacteristics(id) }
+            .getOrNull()
+            ?.let { id to it }
+    }
+    val physicalCameraIds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        characteristics.flatMap { (_, chars) -> chars.physicalCameraIds }.toSet()
+    } else {
+        emptySet()
+    }
+    val cameras = characteristics.mapNotNull { (id, chars) ->
+        if (id in physicalCameraIds) return@mapNotNull null
+        if (chars.get(CameraCharacteristics.LENS_FACING) != CameraCharacteristics.LENS_FACING_BACK) return@mapNotNull null
         val focal = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
             ?.filter { it > 0f }
-            ?.minOrNull() ?: return
+            ?.minOrNull() ?: return@mapNotNull null
         val zoomRange = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             chars.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
         } else {
             null
         }
-        raws += Raw(id, focal, zoomRange)
+        RearCameraInfo(id, focal, zoomRange?.upper ?: 1f)
     }
 
-    for (id in manager.cameraIdList) {
-        addIfBack(id)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val chars = runCatching { manager.getCameraCharacteristics(id) }.getOrNull() ?: continue
-            for (physicalId in chars.physicalCameraIds) addIfBack(physicalId)
-        }
-    }
+    return buildRearLenses(cameras)
+}
 
-    val mains = raws.filter { it.focal in 4.5f..8f }
-    val main = mains.maxByOrNull { it.focal } ?: raws.maxByOrNull { it.focal } ?: return emptyList()
-
-    val lenses = raws
+internal fun buildRearLenses(cameras: List<RearCameraInfo>): List<RearLens> {
+    val usableCameras = cameras
+        .filter { it.focalLength > 0f }
         .distinctBy { it.id }
-        .sortedBy { it.focal }
-        .map { r -> RearLens(r.id, r.id, "%.1fx".format(Locale.US, r.focal / main.focal)) }
+    val mains = usableCameras.filter { it.focalLength in 4.5f..8f }
+    val main = mains.maxByOrNull { it.focalLength }
+        ?: usableCameras.maxByOrNull { it.focalLength }
+        ?: return emptyList()
+
+    val lenses = usableCameras
+        .map { camera ->
+            val ratio = camera.focalLength / main.focalLength
+            RearLens(camera.id, camera.id, "%.1fx".format(Locale.US, ratio)) to ratio
+        }
+        .groupBy { (lens, _) -> lens.label }
+        .values
+        .map { sameLabel ->
+            val targetRatio = sameLabel.first().first.label.removeSuffix("x").toFloat()
+            sameLabel.minBy { (_, ratio) -> kotlin.math.abs(ratio - targetRatio) }.first
+        }
+        .sortedBy { it.label.removeSuffix("x").toFloat() }
 
     // No real tele? Offer a virtual one from the main camera's zoom range.
-    val hasTele = raws.any { it.focal > main.focal * 1.8f }
-    val mainZoomMax = main.zoomRange?.upper ?: 1f
+    val hasTele = usableCameras.any { it.focalLength > main.focalLength * 1.8f }
+    val mainZoomMax = main.maxZoom
     return if (!hasTele && mainZoomMax >= 3f) {
         val virtual = RearLens("${main.id}@3.0", main.id, "3.0x", zoom = 3f)
         lenses + virtual

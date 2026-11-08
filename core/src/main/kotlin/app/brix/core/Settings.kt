@@ -23,14 +23,13 @@ enum class ThemeMode {
 }
 
 /** Normalizes a stored [AppearanceSettings.language] value into a BCP-47
- *  locale tag ("ru", "en", ...) or "" for "follow the system language".
- *  Handles the legacy closed-enum values ("AUTO"/"RU"/"EN") this field used
- *  to store before language selection became an open, resource-driven list —
- *  any other value is assumed to already be a lowercase tag. */
-fun normalizeLanguageTag(raw: String): String = when (raw.uppercase()) {
-    "", "AUTO" -> ""
-    "RU" -> "ru"
-    "EN" -> "en"
+ *  locale tag ("en", ...) or "" for "follow the system language".
+ *  Legacy Russian selections are mapped to English because the app no longer
+ *  ships Russian resources. */
+fun normalizeLanguageTag(raw: String): String = when {
+    raw.isBlank() || raw.equals("AUTO", ignoreCase = true) -> ""
+    raw.equals("EN", ignoreCase = true) -> "en"
+    raw.equals("RU", ignoreCase = true) || raw.startsWith("ru-", ignoreCase = true) -> "en"
     else -> raw.lowercase()
 }
 
@@ -58,6 +57,7 @@ enum class ButtonAction {
     MIC,
     SCENE,
     SNAPSHOT,
+    CUESCORE_SCOREBOARD,
 }
 
 /**
@@ -219,12 +219,7 @@ data class ConnectionPriority(
 data class AppearanceSettings(
     val theme: ThemeMode = ThemeMode.DARK,
     val dynamicColor: Boolean = false,
-    /** BCP-47 locale tag ("ru", "en", ...) or "" for "follow the system
-     *  language". The available options are discovered at runtime from the
-     *  app's own resources (see LanguageScreen), not a fixed list — a
-     *  translator adding a new values-xx/ folder needs no code change to
-     *  make that language selectable. */
-    val language: String = "",
+    val language: String = "en",
     val autoHideHud: Boolean = true,
 )
 

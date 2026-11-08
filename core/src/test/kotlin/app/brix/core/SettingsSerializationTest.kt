@@ -133,7 +133,8 @@ class SettingsSerializationTest {
     fun `normalizeLanguageTag maps legacy enum values`() {
         assertEquals("", normalizeLanguageTag(""))
         assertEquals("", normalizeLanguageTag("AUTO"))
-        assertEquals("ru", normalizeLanguageTag("RU"))
+        assertEquals("en", normalizeLanguageTag("RU"))
+        assertEquals("en", normalizeLanguageTag("ru-RU"))
         assertEquals("en", normalizeLanguageTag("EN"))
     }
 

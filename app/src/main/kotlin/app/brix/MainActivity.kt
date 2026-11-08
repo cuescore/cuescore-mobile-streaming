@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
         val language = cachedLanguage ?: runCatching {
             SettingsStore.create(newBase).load().getOrNull()?.appearance?.language
-        }.getOrNull() ?: ""
+        }.getOrNull()?.ifBlank { "en" } ?: "en"
         cachedLanguage = language
         super.attachBaseContext(newBase.withLocale(normalizeLanguageTag(language)))
     }
@@ -126,6 +126,11 @@ class MainActivity : ComponentActivity() {
                         ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                     } else {
                         ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                }
+                LaunchedEffect(settings.onboardingDone) {
+                    if (settings.onboardingDone == false) {
+                        introDone = false
                     }
                 }
                 LanguageRecreateEffect(settings = settings, settingsLoaded = settingsLoaded)

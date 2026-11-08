@@ -56,11 +56,9 @@ android {
     // the APK — without this, context.assets.locales() (used by
     // LanguageScreen to build the language picker) returns every locale any
     // dependency ships (AndroidX alone carries ~80), not just the ones BRIX
-    // itself has a values-<lang>/strings.xml for. Adding a language still
-    // needs zero UI/logic code (LanguageScreen stays fully dynamic) — a
-    // translator just adds their values-<lang>/ directory AND this one tag.
+    // itself supports.
     androidResources {
-        localeFilters += listOf("en", "ru")
+        localeFilters += listOf("en")
     }
 
     buildFeatures {

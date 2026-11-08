@@ -10,10 +10,10 @@ import androidx.compose.ui.graphics.Color
 // LIVE/REC status never blends with error or red wallpapers).
 
 // ---- Dark theme (default) ----
-val DarkPrimary = Color(0xFFFFC257)
-val DarkOnPrimary = Color(0xFF3E2E00)
-val DarkPrimaryContainer = Color(0xFF5C4300)
-val DarkOnPrimaryContainer = Color(0xFFFFDDA1)
+val DarkPrimary = Color(0xFF467DF7)
+val DarkOnPrimary = Color(0xFFFFFFFF)
+val DarkPrimaryContainer = Color(0xFF264CA2)
+val DarkOnPrimaryContainer = Color(0xFFD9E2FF)
 val DarkSecondary = Color(0xFFD6C4A1)
 val DarkOnSecondary = Color(0xFF392F16)
 val DarkSecondaryContainer = Color(0xFF51452A)
@@ -41,14 +41,14 @@ val DarkSurfaceContainerHigh = Color(0xFF333237)
 val DarkSurfaceContainerHighest = Color(0xFF3E3D42)
 val DarkInverseSurface = Color(0xFFE4E2E6)
 val DarkInverseOnSurface = Color(0xFF303034)
-val DarkInversePrimary = Color(0xFF7A5700)
+val DarkInversePrimary = Color(0xFF2B5DC2)
 val DarkScrim = Color(0xFF000000)
 
 // ---- Light theme (secondary, System theme) ----
-val LightPrimary = Color(0xFF7A5700)
+val LightPrimary = Color(0xFF467DF7)
 val LightOnPrimary = Color(0xFFFFFFFF)
-val LightPrimaryContainer = Color(0xFFFFDDA1)
-val LightOnPrimaryContainer = Color(0xFF5C4300)
+val LightPrimaryContainer = Color(0xFFD9E2FF)
+val LightOnPrimaryContainer = Color(0xFF001945)
 val LightBackground = Color(0xFFFFFBFF)
 val LightOnBackground = Color(0xFF1C1B1F)
 val LightSurface = Color(0xFFFFFBFF)
