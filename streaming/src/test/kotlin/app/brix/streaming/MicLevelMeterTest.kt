@@ -5,13 +5,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Индикатор уровня: перегрузка должна быть видна, а экран — не дёргаться чаще 10 раз в секунду. */
+/** Level meter: clipping must be visible, with at most 10 screen updates per second. */
 class MicLevelMeterTest {
 
     private var now = 0L
     private fun meter() = MicLevelMeter(nowMs = { now }).apply { stereo = false }
 
-    /** Моно-кадр PCM16 из одного повторяющегося отсчёта. */
+    /** Mono PCM16 frame containing one repeated sample value. */
     private fun frame(sample: Int, samples: Int = 512): ByteArray {
         val b = ByteArray(samples * 2)
         for (i in 0 until samples) {
@@ -27,7 +27,7 @@ class MicLevelMeterTest {
         m.submit(frame(32_700))
         assertTrue(m.clipping.value)
 
-        // Дальше тихие кадры каждые 20 мс — как идёт микрофон.
+        // Then quiet frames every 20 ms, as from a microphone.
         repeat(70) {
             now += 20
             m.submit(frame(1_000))
@@ -46,7 +46,7 @@ class MicLevelMeterTest {
         val first = m.left.value
         assertTrue(first > 0f)
 
-        // Громче, но через 50 мс — на экран ещё рано.
+        // Louder, but after 50 ms it is too early for a screen update.
         now = 50
         m.submit(frame(30_000))
         assertEquals("раньше значение менялось на каждом кадре", first, m.left.value, 0f)
@@ -61,7 +61,7 @@ class MicLevelMeterTest {
         val m = meter()
         m.submit(frame(1_000))
         now = 40
-        m.submit(frame(30_000)) // пик посреди окна
+        m.submit(frame(30_000)) // Peak in the middle of the window
         repeat(4) {
             now += 15
             m.submit(frame(1_000))

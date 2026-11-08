@@ -75,7 +75,7 @@ class KickSessionTest {
         )
         assertNull(LoopbackReceiver.parseRequestLine("GET /favicon.ico HTTP/1.1"))
         assertNull(LoopbackReceiver.parseRequestLine("POST /callback HTTP/1.1"))
-        // Аудит 23.09: голый заход на /callback не должен завершать приём.
+        // Audit 23.09: a bare request to /callback must not complete reception.
         assertNull(LoopbackReceiver.parseRequestLine("GET /callback HTTP/1.1"))
         assertEquals(
             OAuthCallback(null, "s1", "access_denied"),

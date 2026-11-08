@@ -243,11 +243,11 @@ class SrtlaProtocolTest {
         return field.get(target)
     }
 
-    // --- Выбор адреса при разрешении имени ---
+    // --- Address selection during name resolution ---
     //
-    // Настройка существует потому, что часть операторов и приёмников ведёт себя
-    // с IPv6 хуже: соединение встаёт, а данные не идут. Но остаться совсем без
-    // адреса хуже любого IPv6, поэтому запасной путь обязателен.
+    // Some carriers and receivers handle IPv6 poorly: connections establish
+    // but no data flows. Having no address is worse than any IPv6 address,
+    // so a fallback is essential.
 
     private fun v4(s: String) = java.net.InetAddress.getByName(s)
     private fun v6(s: String) = java.net.InetAddress.getByName(s)

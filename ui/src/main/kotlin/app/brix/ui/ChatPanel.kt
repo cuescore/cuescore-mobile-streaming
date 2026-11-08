@@ -65,24 +65,24 @@ private const val FONT_SCALE_MAX = 1.8f
 private const val FONT_SCALE_STEP = 0.1f
 
 /**
- * Чат на экране стримера — не в HUD (там компактная строка статистики,
- * текст переменной длины дёргал бы её), и не в потоке: обычный Compose-элемент
- * поверх превью, событийный, GL-тракт не трогает.
+  * Chat on the streamer screen — not in the HUD (which has a compact stats line;
+  * variable-length text would make it jump), and not in the stream: a regular Compose element
+  * above the preview, event-driven, does not touch the GL pipeline.
  *
- * Две ловушки, которых здесь избегаем:
- * - `items(messages, key = { it.id })` — без ключа LazyColumn перерисовывает
- *   весь список на каждое новое сообщение;
- * - автопрокрутка — `scrollToItem`, а не `animateScrollToItem`: анимация
- *   гоняла бы кадры непрерывно, пока чат открыт, а не только на новое
- *   сообщение.
+  * Two pitfalls avoided here:
+  * - `items(messages, key = { it.id })` — without a key, LazyColumn redraws
+  *   the entire list for every new message;
+  * - autoscroll uses `scrollToItem`, not `animateScrollToItem`: animation
+  *   would keep rendering frames continuously while chat is open, instead of only on a new
+  *   message.
  *
- * Размер и положение панели меняются перетаскиванием (см. `FractionalBox`/
- * `OverlayTuner` в StreamScreen.kt, вход — иконка [onEnterPlacement] в шапке);
- * размер шрифта — кнопками A±, тут же рядом со статусом подключения.
+  * The panel’s size and position are adjusted by dragging (see `FractionalBox`/
+  * `OverlayTuner` in StreamScreen.kt; entry point is the [onEnterPlacement] icon in the header);
+  * font size is controlled with the A± buttons next to the connection status.
  *
- * Мультичат: [messages] — уже слитая лента из всех включённых площадок
- * (см. `mergeChatMessages` в :streaming), сюда попадает готовый список, без
- * знания о конкретных клиентах.
+  * Multichat: [messages] is already a merged feed from all enabled platforms
+  * (see `mergeChatMessages` in :streaming); this receives the ready-made list, without
+  * knowing about individual clients.
  */
 @Composable
 fun ChatPanel(
@@ -114,9 +114,9 @@ fun ChatPanel(
                 color = Color.White,
             )
             Spacer(Modifier.width(6.dp))
-            // По иконке+точке статуса на каждую ВКЛЮЧЁННУЮ площадку — не одна
-            // общая точка на всех: в мультичате важно видеть, что именно Kick
-            // отвалился, а не гадать, кто из трёх сейчас не в сети.
+            // Show an icon and status dot for each ENABLED platform — not one
+            // shared dot for all: in multichat it matters to see that Kick in particular
+            // disconnected, rather than guessing which of the three is offline.
             platformStatuses.forEach { (platform, isConnected) ->
                 PlatformStatusBadge(platform, isConnected)
                 Spacer(Modifier.width(6.dp))
@@ -156,11 +156,11 @@ fun ChatPanel(
             } else {
                 LazyColumn(
                     state = listState,
-                    // weight — не fillMaxHeight: Column не задаёт минимальную
-                    // высоту (см. FractionalBox.heightIn(max=...)), и без
-                    // взвешенного ребёнка сам подстроился бы под контент. Со
-                    // взвешенным — использует весь потолок только когда
-                    // список реально показан.
+                    // weight, not fillMaxHeight: Column does not impose a minimum
+                    // height (see FractionalBox.heightIn(max=...)), and without a
+                    // weighted child it would size itself to the content. With a
+                    // weighted child, it uses the full available height only when
+                    // the list is actually shown.
                     modifier = Modifier.fillMaxWidth().weight(1f, fill = true).padding(top = 4.dp),
                 ) {
                     items(messages, key = { it.id }) { message ->
@@ -173,7 +173,7 @@ fun ChatPanel(
 }
 
 private fun stepFontScale(current: Float, delta: Float): Float {
-    // round() против плавающего накопления погрешности (0.1f не точен в float).
+    // round() avoids accumulating floating-point error (0.1f is not exact as a float).
     val stepped = round((current + delta) / FONT_SCALE_STEP) * FONT_SCALE_STEP
     return stepped.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)
 }
@@ -196,9 +196,9 @@ private fun HeaderIconButton(
     )
 }
 
-/** Одна и та же площадка — один и тот же значок везде: в шапке (статус
- *  подключения) и перед каждым сообщением (кто откуда пишет). Реальные
- *  бренд-иконки (simpleicons.org, CC0), не самодельные метки. */
+/** The same platform uses the same icon everywhere: in the header (connection
+  *  status) and before every message (who is speaking). Real
+  *  brand icons (simpleicons.org, CC0), not homemade labels. */
 private fun platformIconRes(platform: ChatPlatform): Int = when (platform) {
     ChatPlatform.TWITCH -> R.drawable.ic_platform_twitch
     ChatPlatform.KICK -> R.drawable.ic_platform_kick
@@ -225,11 +225,11 @@ private fun PlatformStatusBadge(platform: ChatPlatform, connected: Boolean) {
     }
 }
 
-/** Высота эмодзи в долях размера шрифта: крупнее букв, но строку не распирает. */
+/** Emoji height as a fraction of font size: larger than letters, but does not expand the line. */
 private const val EMOTE_EM = 1.6f
 
-/** Готовые картинки на всю панель: строка чата пересобирается при прокрутке,
- *  и без этого каждая перерисовка снова шла бы к Glide. */
+/** Ready-made images for the whole panel: each chat row is recomposed while scrolling,
+  *  and without this each redraw would call Glide again. */
 private val emoteCache = LruCache<String, ImageBitmap>(300)
 
 @Composable
@@ -270,9 +270,9 @@ private fun ChatMessageRow(message: ChatMessage, fontScale: Float) {
                 .padding(top = 2.dp, end = 4.dp)
                 .size(12.dp * fontScale),
         )
-        // Эмодзи — вставками в сам текст (InlineTextContent), а не отдельными
-        // Image в Row: так они переносятся вместе со словами. Ключ вставки —
-        // адрес картинки: одинаковые эмодзи в строке делят одно описание.
+        // Emoji are inserted directly into the text (InlineTextContent), not as separate
+        // Images in a Row: this way they wrap along with the words. The insertion key is the
+        // image address: identical emoji in a row share one description.
         val emotes = message.parts.filterIsInstance<ChatPart.Emote>().distinctBy { it.url }
         Text(
             text = buildAnnotatedString {
@@ -296,10 +296,10 @@ private fun ChatMessageRow(message: ChatMessage, fontScale: Float) {
                     ),
                 ) { EmoteImage(emote) }
             },
-            // lineHeight у Material-стилей — фиксированный sp, не доля от
-            // fontSize: масштабировать нужно оба, иначе перенесённая строка
-            // рисуется с прежним (маленьким) межстрочным интервалом и наезжает
-            // на соседнюю — сам шрифт растёт, а зазор под него нет.
+            // lineHeight in Material styles is a fixed sp value, not a fraction of
+            // fontSize: both need to be scaled; otherwise a wrapped line
+            // is drawn with the old (small) line spacing and overlaps
+            // the next line — the font grows, but the space below it does not.
             style = baseStyle.copy(
                 fontSize = baseStyle.fontSize * fontScale,
                 lineHeight = baseStyle.lineHeight * fontScale,

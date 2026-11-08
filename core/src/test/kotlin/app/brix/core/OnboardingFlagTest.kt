@@ -6,11 +6,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Признак «мастер первого запуска пройден» (16.09).
+ * First-run wizard completion flag (16.09).
  *
- * Ошибка в одну сторону — мастер выскакивает у человека с настроенным эфиром,
- * в другую — новичок его не видит. Проверяем через настоящий JSON: вся схема
- * держится на том, что kotlinx не пишет значения по умолчанию.
+ * One error shows the wizard to a user with a configured stream; the opposite
+ * hides it from newcomers. Test with real JSON: the scheme relies on kotlinx
+ * omitting default values.
  */
 class OnboardingFlagTest {
 

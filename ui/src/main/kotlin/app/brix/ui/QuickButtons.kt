@@ -107,9 +107,9 @@ private val STOP_HEIGHT = SMALL_H
 private const val LONG_PRESS_MS = 1500L
 private const val STOP_HOLD_MS = 700L
 private val STOP_RING_STROKE = 5.dp
-/** Кольцо прогресса рисуется ВНУТРИ кнопки: снаружи его срезает панель
- *  быстрых кнопок (проверено на устройстве 20.09). Отступ от края — чтобы
- *  скругление кольца не сливалось со скруглением фона. */
+/** Draw the progress ring INSIDE the button: outside, the quick-button panel
+ *  clips it (verified on-device 20.09). Inset from the edge so the ring's
+ *  rounded corners do not merge with those of the background. */
 private val STOP_RING_INSET = 2.dp
 
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTapWithLongPress(
@@ -171,7 +171,7 @@ fun ButtonAction.icon(active: Boolean = false): ImageVector = when (this) {
     ButtonAction.VIDEO_EFFECT -> Icons.Filled.Palette
     ButtonAction.MASCOT -> Icons.Filled.Face
     ButtonAction.POWER_SAVE -> Icons.Filled.BatterySaver
-    // Активна, когда микрофон выбран вручную, а не отдан системе.
+    // Active when the microphone is selected manually rather than by the system.
     ButtonAction.MIC -> if (active) Icons.Filled.SettingsVoice else Icons.Filled.KeyboardVoice
     ButtonAction.SCENE -> Icons.Filled.Layers
     ButtonAction.SNAPSHOT -> Icons.Filled.PhotoCamera
@@ -668,13 +668,13 @@ private fun StopButton(
         streaming -> liveColor()
         else -> MaterialTheme.colorScheme.primary
     }
-    // Цвет вёлся мгновенным when, пока кольцо ехало 700 мс: в один кадр фон
-    // перекрашивался скачком, и переход читался как рывок (владелец, 20.09 —
-    // «анимация кривоватая»). Длительность вдвое короче удержания, чтобы цвет
-    // успел встать до того, как кольцо замкнётся.
+    // Color previously used an instant when while the ring animated for 700 ms:
+    // the background jumped in one frame, making the transition jerky
+    // (the owner, 20.09: "animation is a bit off"). Duration is half the
+    // hold time so the color settles before the ring closes.
     val bg by animateColorAsState(targetValue = target, animationSpec = tween(220), label = "stopBg")
-    // Нажатие само по себе ничем не отзывалось — у соседних кнопок отклик есть,
-    // у самой важной не было.
+    // Pressing alone gave no feedback: neighboring buttons had it,
+    // but the most important button did not.
     val pressDim by animateColorAsState(
         targetValue = if (pressed) Color.Black.copy(alpha = 0.18f) else Color.Transparent,
         animationSpec = tween(90),
@@ -690,9 +690,9 @@ private fun StopButton(
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
                 )
                 if (!streaming) return@drawBehind
-                // Кольцо внутри кнопки, но толще прежних 3 dp: снаружи его
-                // срезала панель (проверено на устройстве 20.09), а тонкое
-                // под пальцем не читалось.
+                // Ring inside the button, thicker than the previous 3 dp:
+                // the panel clipped it outside (verified on-device 20.09),
+                // and the thin ring was unreadable beneath a finger.
                 val strokePx = STOP_RING_STROKE.toPx()
                 val inset = STOP_RING_INSET.toPx() + strokePx / 2
                 val radius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx() - inset)
@@ -711,10 +711,10 @@ private fun StopButton(
                 )
                 val p = holdProgress.floatValue
                 if (p <= 0f) return@drawBehind
-                // Отсчёт от середины нижней грани (владелец, 20.09): угол
-                // кнопки закрыт ладонью чаще, чем её низ. Точку ищем по самой
-                // кривой — у скруглённого прямоугольника доля периметра до
-                // нижней середины зависит от размеров кнопки.
+                // Start at the bottom midpoint (the owner, 20.09): the palm
+                // covers the corner more often than the bottom. Find the point
+                // on the curve itself; the perimeter fraction to a rounded
+                // rectangle's bottom midpoint depends on button dimensions.
                 val startAt = bottomCenterOffset(measure, len, size.width / 2f, size.height - inset)
                 val end = startAt + len * p
                 val segment = androidx.compose.ui.graphics.Path()
@@ -735,16 +735,16 @@ private fun StopButton(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val downPos = down.position
                     val startAt = android.os.SystemClock.elapsedRealtime()
-                    // Жест отменяется, когда меняется `streaming` (ключ
-                    // pointerInput): эфир оборвался посреди удержания. Без
-                    // finally кнопка оставалась затемнённой, а holding=true при
-                    // следующем эфире запускал кольцо без касания.
+                    // Gesture cancels when `streaming` (pointerInput key) changes:
+                    // the stream ended mid-hold. Without finally the button
+                    // stayed dimmed, and holding=true started the ring without
+                    // touch during the next stream.
                     try {
                     pressed = true
                     if (streaming) {
                         holding = true
-                        // Отсчёт пошёл — это единственный сигнал, который виден
-                        // и когда экран не виден: на солнце, на бегу, в кармане.
+                        // Countdown started: the only feedback perceptible
+                        // without seeing the screen, in sunlight, running or in a pocket.
                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     }
                     var swiped = false
@@ -779,8 +779,8 @@ private fun StopButton(
                         else -> if (held) currentOnClick()
                     }
                     if (streaming) {
-                        // Разный отклик на «сработало» и «отпустил раньше»:
-                        // иначе на ощупь эти два исхода неразличимы.
+                        // Different feedback for "activated" and "released early":
+                        // otherwise the outcomes feel identical.
                         haptic.performHapticFeedback(
                             if (held && !swiped) {
                                 androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm
@@ -802,7 +802,7 @@ private fun StopButton(
             streaming -> stringResource(R.string.btn_stop)
             else -> stringResource(R.string.btn_start)
         }
-        // Раньше подпись переключалась скачком в тот же кадр, что и фон.
+        // Previously the label switched abruptly in the same frame as the background.
         Crossfade(targetState = label, animationSpec = tween(160), label = "stopLabel") { text ->
             Text(
                 text = text,
@@ -813,10 +813,10 @@ private fun StopButton(
     }
 }
 
-/** Смещение по контуру до середины нижней грани: у скруглённого прямоугольника
- *  оно зависит от сторон и радиуса, поэтому ищем по самой кривой, а не считаем
- *  формулой. 96 проб — доли микросекунды, зато не зависит от того, с какого
- *  угла Path начинает обход. */
+/** Contour offset to the bottom midpoint: depends on a rounded rectangle's
+ *  dimensions and radius, so search the curve instead of using a formula.
+ *  96 samples take fractions of a microsecond and work regardless of the
+ *  corner where Path starts traversal. */
 private fun bottomCenterOffset(
     measure: androidx.compose.ui.graphics.PathMeasure,
     length: Float,

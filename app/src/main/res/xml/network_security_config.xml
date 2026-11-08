@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- HTTP без шифрования разрешён. Найдено стендом 04.10: WHIP по http://
-     (MediaMTX по умолчанию, свой сервер в домашней сети) падал сразу — Android
-     с API 28 запрещает cleartext. Владелец решил разрешить (04.10): RTMP у нас
-     и так всегда идёт без шифрования вместе с ключом трансляции, а под адресом
-     WHIP с http:// редактор сервера об этом предупреждает. Всё, что ходит к
-     чужим сервисам (Twitch, Kick, донаты, эмоуты), использует https само. -->
+<!-- Unencrypted HTTP is allowed. Test bench 04.10 found WHIP over http://
+     (MediaMTX default, a private home-network server) failed immediately:
+     Android API 28+ disallows cleartext. The owner chose to allow it (04.10):
+     our RTMP already sends the stream key without encryption, and the server
+     editor warns about WHIP http:// URLs. Requests to external services
+     (Twitch, Kick, donations, emotes) use https themselves. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

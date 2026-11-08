@@ -45,9 +45,9 @@ class MediaCache(
                         val body = response.body ?: return@withContext null
                         val tmp = File(cacheDir, "${cached.name}.part")
                         tmp.outputStream().use { out -> body.byteStream().copyTo(out) }
-                        // Ответ 200 с пустым телом — обычный сетевой сбой CDN.
-                        // Раньше такой файл ложился в кэш как годный, и
-                        // следующий донат падал на декодировании (аудит 23.09).
+                        // A 200 response with an empty body is a common CDN network failure.
+                        // Previously this file was cached as valid, and the next donation
+                        // crashed during decoding (23.09 audit).
                         if (tmp.length() == 0L) {
                             tmp.delete()
                             return@withContext null

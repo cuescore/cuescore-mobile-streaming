@@ -1,21 +1,22 @@
 package app.brix.streaming
 
 /**
- * Какие сети заводить каналами эфира, а какие держать в запасе.
+ * Which networks become stream links and which remain on standby.
  *
- * Вынесено из колбэков SrtlaStreamer по той же причине, что и
- * [SrtlaReconnectController]: решение зависело от Android-класса `Network` и
- * проверялось только на улице, а баг с `srt://` (аудит 23.09) сидел ровно здесь —
- * вторую сеть отбрасывали насовсем, и уход с Wi-Fi убивал эфир. [N] — ключ сети:
- * в приложении `android.net.Network`, в тестах что угодно.
+ * Extracted from SrtlaStreamer callbacks for the same reason as
+ * [SrtlaReconnectController]: the decision depended on Android's `Network`
+ * and was tested only outdoors. The `srt://` bug (audit 23.09) lived here:
+ * discarding the second network permanently meant leaving Wi-Fi killed
+ * the stream. [N] is the network key: `android.net.Network` in the app,
+ * any type in tests.
  *
- * Правила:
- * - вне активной сессии и с весом 0 (канал выключен в профиле) — не заводим;
- * - SRTLA заводит все сети: серверная сторона склеивает поток обратно;
- * - обычный SRT держит ОДИН канал: второй сокет к тому же серверу ломает сессию
- *   (полевой прогон 14.09). Лишние сети — в запас, и когда рабочая пропала,
- *   первая из запаса становится каналом. Хранить запас обязательно:
- *   BondingNetworkManager второй раз про ту же сеть не сообщит.
+ * Rules:
+ * - do not create outside an active session or at weight 0 (disabled in profile);
+ * - SRTLA creates all networks: the server reassembles the stream;
+ * - plain SRT uses ONE link: a second socket to the same server breaks the session
+ *   (field run 14.09). Extra networks stay on standby; if the active one disappears,
+ *   the first standby becomes a link. Retaining standby networks is essential:
+ *   BondingNetworkManager will not report the same network twice.
  */
 internal class ChannelRoster<N : Any> {
 
@@ -42,8 +43,8 @@ internal class ChannelRoster<N : Any> {
     }
 
     /**
-     * Сеть пропала. Возвращает сеть из запаса, которую надо завести вместо
-     * неё, — только для обычного SRT, оставшегося совсем без канала.
+     * Network disappeared. Return a standby network to start in its place,
+     * only for plain SRT left without any link.
      */
     @Synchronized
     fun onLost(network: N, plainSrt: Boolean, channelsLeft: Int, sessionActive: Boolean): Pair<N, String>? {

@@ -6,8 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Чистые функции, без сети и без Android — сверено построчно с реальными
- * примерами из Twitch IRC (см. traps в TwitchChatClient: PING/PONG, CAP REQ
+  * Pure functions, no network or Android — checked line by line against real
+  * examples from Twitch IRC (see traps in TwitchChatClient: PING/PONG, CAP REQ
  * tags, RECONNECT).
  */
 class TwitchIrcParserTest {
@@ -58,9 +58,9 @@ class TwitchIrcParserTest {
 
     @Test
     fun `экранированные символы в тегах`() {
-        // ':' -> '\:' (запятая на деле не нужна экранировать, тест на display-name
-        // с пробелом — Twitch не шлёт пробелы в никнейме, но парсер не должен
-        // падать на escape-последовательностях в принципе).
+        // ':' -> '\:' (the comma does not actually need escaping; this tests display-name
+        // with a space — Twitch does not send spaces in nicknames, but the parser must not
+        // fail on escape sequences in general).
         val line = "@display-name=Weird\\sName;color=#123456 :w!w@w.tmi.twitch.tv PRIVMSG #ch :test"
         val event = TwitchIrcParser.parse(line) as TwitchIrcEvent.Privmsg
         assertEquals("Weird Name", event.displayName)

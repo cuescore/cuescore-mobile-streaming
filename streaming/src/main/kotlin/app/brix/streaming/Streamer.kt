@@ -45,9 +45,9 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     private val _state = MutableStateFlow(StreamState())
     override val state: StateFlow<StreamState> = _state.asStateFlow()
 
-    // Тик часов эфира — отдельно от состояния, чтобы ежесекундная отметка
-    // времени не перерисовывала весь экран стримера. Публикуется из того же
-    // цикла, что уже крутится, второго таймера не появляется.
+    // The live-stream clock tick is separate from state so the per-second time
+    // update does not redraw the entire streamer screen. It is published from
+    // the existing loop; no second timer is introduced.
     private val _uptimeTick = MutableStateFlow(0L)
     override val uptimeTick: StateFlow<Long> = _uptimeTick.asStateFlow()
 
@@ -65,32 +65,32 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     private var currentUrl: String? = null
     private var activeGen = 0L
 
-    /** Энкодер уже собран этим prepare(). Без этого флага повторный prepare()
-     *  при живом превью гарантированно падал — см. комментарий в [prepare]. */
-    /** Накопленные байты для единственной строки канала в HUD. */
+    /** The encoder has already been assembled by this prepare(). Without this
+     *  flag, a repeated prepare() with a live preview would always fail — see [prepare]. */
+    /** Accumulated bytes for the single channel row in the HUD. */
     @Volatile
     private var sentBytes = 0L
 
     @Volatile
     private var prepared = false
 
-    /** Кодек, запечённый в энкодер последним prepare(): битрейт меняется на
-     *  лету, кодек — нет, его смена требует пересборки. */
+    /** Codec baked into the encoder by the last prepare(): bitrate can change
+     *  live, but codec cannot; changing it requires rebuilding. */
     @Volatile
     private var appliedCodec: Codec? = null
 
-    /** Интервал ключевых кадров, запечённый последним prepare(). Как и кодек,
-     *  на лету не меняется, поэтому его правка тоже требует пересборки —
-     *  иначе настройка молча не применялась бы до перезапуска приложения. */
+    /** Keyframe interval baked in by the last prepare(). Like codec, it cannot
+     *  change live, so edits require rebuilding; otherwise the setting silently
+     *  remains unapplied until app restart. */
     @Volatile
     private var appliedKeyframeSec: Int? = null
 
     private val opsScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // Камера у всех трёх стримеров одна и та же, а чинили её до 03.09 только в
-    // SRTLA: здесь оставались замерзающий тап по фокусу, походы в HAL с потока
-    // вызова и полностью проигнорированные умолчания камеры. Общий контроллер
-    // закрывает это разом и не даёт разъехаться снова.
+    // All three streamers use the same camera, but before 03.09 it had only been
+    // fixed in SRTLA: here, focus taps could freeze, HAL calls ran on the caller's
+    // thread, and camera defaults were completely ignored. The shared controller
+    // fixes all of this at once and prevents the implementations from diverging again.
     private val camera = CameraController(
         appContext = appContext,
         stream = stream,
@@ -100,9 +100,9 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
         updateState = { transform -> _state.update(transform) },
     )
 
-    // Отличить «не смогли подключиться с первого раза» от «оборвалось посреди
-    // эфира» иначе нечем: транспорт в обоих случаях зовёт onConnectionFailed.
-    // Первое — ошибка пользователю, второе — повод продолжать лестницу.
+    // There is no other way to distinguish “could not connect on the first try”
+    // from “disconnected mid-stream”: the transport calls onConnectionFailed for
+    // both. The first is an error for the user; the second is a reason to continue the retry ladder.
     @Volatile
     private var isReconnectAttempt = false
 
@@ -137,18 +137,19 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     )
 
     /**
-     * Такт адаптивного битрейта. Сигнал затора у RTMP — глубина очереди отправки:
-     * TCP пакеты не теряет, при нехватке полосы растёт очередь, а с ней задержка.
+     * Adaptive bitrate tick. RTMP's congestion signal is send-queue depth:
+     * TCP does not lose packets; insufficient bandwidth grows the queue
+     * and hence latency.
      */
     private fun stepAdaptiveBitrate() {
         if (!_state.value.adaptiveBitrateEnabled || !stream.isStreaming) return
         val client = runCatching { stream.getStreamClient() }.getOrNull() ?: return
         val items = runCatching { client.getItemsInCache() }.getOrNull() ?: return
         val cache = runCatching { client.getCacheSize() }.getOrNull() ?: return
-        // Одна строка в секунду с ФАКТИЧЕСКИМ заполнением очереди: пороги
-        // регулятора выведены из логики, а не измерены, и без
-        // этих цифр калибровать их нечем. Тег отдельный, уровень INFO —
-        // читается без verbose, который стоит 13 % ядра.
+        // One line per second with the ACTUAL queue fill: regulator thresholds
+        // were derived from logic, not measured, and these figures are needed to
+        // calibrate them. Separate tag, INFO level — readable without verbose,
+        // which costs 13% of a core.
         Log.i(
             "BrixAbr",
             "fill=%.2f items=%d cache=%d kbps=%d".format(
@@ -175,8 +176,8 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     )
 
     /**
-     * Одна попытка лестницы. Транспортного переподключения, как у SRT, здесь
-     * нет — у RTMP это полный перезапуск потока.
+     * One retry-ladder attempt. There is no transport reconnect as with SRT —
+     * for RTMP this is a full stream restart.
      */
     @Synchronized
     private fun attemptReconnect() {
@@ -186,8 +187,8 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
         isReconnectAttempt = true
         runCatching { stream.stopStream() }
         stream.startStream(url)
-        // stopStream() выше гасит захват с камеры, иначе эфир вернулся бы с
-        // замороженной картинкой.
+        // stopStream() above stops camera capture; otherwise the live stream
+        // would resume with a frozen image.
         camera.resumePreviewIfDetached()
     }
 
@@ -195,11 +196,11 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun configure(profile: StreamProfile, srtLatencyMs: Int) {
         this.profile = profile
-        // adaptiveBitrateEnabled здесь НЕ трогаем: это рантаймовый тумблер,
-        // которым владеет setAdaptiveBitrate(). Перезапись из сохранённого
-        // профиля сбрасывала ручной выбор на каждом нажатии «Старт» — тумблер
-        // сам собой включался при старте эфира. В SrtlaStreamer этот запрет
-        // стоит явным комментарием с самого начала, сюда не доехал.
+        // Do NOT touch adaptiveBitrateEnabled here: it is a runtime toggle
+        // owned by setAdaptiveBitrate(). Overwriting it from the saved profile
+        // reset the manual choice on every press of “Start” — the toggle enabled
+        // itself when streaming began. SrtlaStreamer has explicitly documented
+        // this restriction from the start; it had not made its way here.
         abr.configure(
             target = profile.adaptiveBitrate.targetBitrateKbps * 1000L,
             min = profile.adaptiveBitrate.minimumBitrateKbps * 1000L,
@@ -207,14 +208,14 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     }
 
     override fun prepare(): Boolean {
-        // `StreamBase.prepareVideo` бросает IllegalStateException, если идёт
-        // эфир, запись ИЛИ ПРЕВЬЮ. А UI зовёт prepare() дважды: один раз при
-        // подключении превью (тогда его ещё нет, и всё проходит) и второй раз
-        // по нажатию «Старт» — уже при живом превью. В SRTLA-пути от этого
-        // защищают ранний выход по `prepared` и остановка превью на время
-        // пересборки; сюда, как и остальные правки, они не доехали, поэтому
-        // старт RTMP/WHIP падал с «Failed to prepare stream» ВСЕГДА.
-        // Знание не новое: тот же отказ ловили в поле 31.08 на смене кодека.
+        // `StreamBase.prepareVideo` throws IllegalStateException while streaming,
+        // recording, OR PREVIEWING. The UI calls prepare() twice: once when
+        // connecting the preview (which is not live yet, so it succeeds) and
+        // again on pressing “Start” — now with a live preview. The SRTLA path
+        // prevents this with an early return on `prepared` and by stopping the
+        // preview during reassembly; those fixes, like the others, had not made
+        // it here, so RTMP/WHIP startup ALWAYS failed with “Failed to prepare stream.”
+        // This is not new: the same failure was seen in the field on 31.08 when changing codecs.
         val wantCodec = profile?.video?.codec ?: VideoSettings().codec
         val wantKeyframe = profile?.video?.keyframeIntervalSec ?: VideoSettings().keyframeIntervalSec
         if (prepared && appliedCodec == wantCodec && appliedKeyframeSec == wantKeyframe) return true
@@ -238,13 +239,13 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
                 height = p.height,
                 bitrate = p.bitrateKbps * 1000,
                 fps = p.fps,
-                // Поле keyframeIntervalSec жило в модели с самого начала и не
-                // читалось НИГДЕ: писалось на диск и не делало ничего. Интервал
-                // ключевых кадров важен для зрителя — от него зависит, как
-                // быстро подхватывается картинка при подключении и после
-                // потери, — поэтому доводим до энкодера, а не выбрасываем.
+                // The keyframeIntervalSec field has been in the model from the
+                // beginning but was read NOWHERE: it was written to disk and did
+                // nothing. The keyframe interval matters to viewers — it affects
+                // how quickly video appears on connect and after a loss — so pass
+                // it to the encoder instead of discarding it.
                 iFrameInterval = p.keyframeIntervalSec,
-                // Профиль по возможностям железа — см. SrtlaStreamer.prepare().
+                // Choose a profile based on hardware capabilities — see SrtlaStreamer.prepare().
                 profile = EncoderCapabilities.bestProfile(p.codec),
             )
             ensureMeteredAudioSource()
@@ -257,8 +258,8 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
             if (prepared) appliedCodec = p.codec
             appliedKeyframeSec = p.keyframeIntervalSec
             if (restorePreview) {
-                // Превью гасили ради пересборки — вернуть, иначе экран замрёт
-                // на последнем кадре и пользователь решит, что камера умерла.
+                // The preview was stopped for reassembly — restore it, or the
+                // screen will freeze on the last frame and the user may think the camera died.
                 camera.resumePreviewIfDetached()
             }
             if (!videoOk || !audioOk) {
@@ -292,9 +293,9 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
             }
             false
         } catch (e: Exception) {
-            // Текст исключения раньше уходил ТОЛЬКО в StreamState.technical, то
-            // есть в лог не попадало ничего: на устройстве «Failed to prepare
-            // stream» и полная тишина в logcat, разбирать нечем.
+            // The exception text used to go ONLY into StreamState.technical,
+            // meaning nothing reached the log: the device showed “Failed to
+            // prepare stream” and logcat was silent, leaving nothing to investigate.
             Log.e(tag, "prepare failed", e)
             _state.update {
                 it.copy(
@@ -334,20 +335,20 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     }
 
 
-    /** Микрофон под текущим источником: с 17.09 чистый микрофон тоже завёрнут в
-     *  [OverlayAudioSource] — он считает уровень для индикатора в HUD. Все
-     *  настройки микрофона применяются к обёрнутому источнику. */
+    /** The microphone for the current source: since 17.09, the plain microphone
+     *  is also wrapped in [OverlayAudioSource] — it calculates the level for the
+     *  HUD indicator. All microphone settings are applied to the wrapped source. */
     private fun micSourceOrNull(): MicrophoneSource? = when (val source = stream.audioSource) {
         is MicrophoneSource -> source
         is app.brix.streaming.overlay.OverlayAudioSource -> source.micSourceForPreference()
         else -> null
     }
 
-    /** Поставить наш источник, если стоит голый микрофон из библиотеки. */
+    /** Install our source if the library's bare microphone is active. */
     private fun ensureMeteredAudioSource() {
-        // Только голый микрофон из библиотеки. Любой другой источник выбран
-        // сценой (например, внутренний звук при захвате экрана), и подменять
-        // его микрофоном при пересборке потока нельзя.
+        // Only the library's bare microphone. Any other source was selected by
+        // the scene (for example, internal audio during screen capture), and must
+        // not be replaced with a microphone during stream reassembly.
         if (stream.audioSource !is MicrophoneSource) return
         runCatching {
             stream.changeAudioSource(app.brix.streaming.overlay.OverlayAudioSource(meter = micMeter))
@@ -373,12 +374,12 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
         applyMicSource()
     }
 
-    /** Предпочтение сбрасывается вместе с источником звука, поэтому вызывается и
-     *  из configure(), и при переключении кнопкой. */
+    /** The preference resets along with the audio source, so this is called from
+     *  configure() and when toggled with the button. */
     private fun applyMicSource() {
         val mic = micSourceOrNull() ?: return
-        // HAL вправе отказать, и отказ надо видеть: иначе выбор «у камеры»
-        // молча остаётся выбором системы.
+        // HAL may reject the request, and that rejection must be visible;
+        // otherwise the “at camera” choice silently remains the system choice.
         val applied = runCatching {
             mic.setPreferredDevice(MicDevices.deviceFor(appContext, preferredMic, preferredMicName))
         }.getOrDefault(false)
@@ -387,11 +388,11 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
         }
     }
 
-    // Один монитор на весь жизненный цикл — ровно то, что комментарий у
-    // release() обещал с самого начала, но чего в коде не было: released-флаг
-    // проверялся без него, поэтому ACTION_START из уведомления мог зайти в
-    // start() параллельно с release() и поднять эфир на уже освобождённом
-    // потоке. В SrtlaStreamer эта защита стоит с самого аудита (P0-2).
+    // One monitor for the entire lifecycle — exactly what the comment on
+    // release() had promised from the start, but the code lacked: the released
+    // flag was checked without it, so ACTION_START from a notification could
+    // enter start() concurrently with release() and start streaming on an already
+    // released stream. SrtlaStreamer has had this protection since the audit (P0-2).
     @Synchronized
     override fun start(url: String) {
         if (stream.isStreaming) return
@@ -401,9 +402,9 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
         reconnector.reset()
         isReconnectAttempt = false
         sentBytes = 0L
-        // Стартовый битрейт берём из настроек ABR, а не из видеопрофиля:
-        // initialBitrateKbps существует ровно затем, чтобы начинать осторожнее
-        // целевого и подниматься по мере того, как сеть себя покажет.
+        // Take the initial bitrate from ABR settings, not the video profile:
+        // initialBitrateKbps exists precisely to start more cautiously than the
+        // target and rise as the network proves itself.
         abr.reset((profile?.adaptiveBitrate?.initialBitrateKbps ?: 0) * 1000L)
         applyAbrBitrate()
         _state.update {
@@ -412,9 +413,9 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
         stream.startStream(url)
         uptime.start()
         recorder.start()
-        // RootEncoder на stopStream() гасит и захват с камеры, поэтому после
-        // Stop->Start превью остаётся стоять на последнем кадре, и выглядит это
-        // как умершая камера. Тот же вызов, что в SrtlaStreamer.
+        // RootEncoder also stops camera capture on stopStream(), so after
+        // Stop->Start the preview remains on the last frame and looks like a dead
+        // camera. Same call as in SrtlaStreamer.
         camera.resumePreviewIfDetached()
         camera.applyTorchOnStart()
     }
@@ -435,15 +436,14 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
 
     @Synchronized
     override fun reconnect() {
-        // Гвард раньше требовал фазу Live/Connecting, а сюда приходят именно
-        // из Failed — кнопка «Переподключить» в уведомлении после обрыва не
-        // делала вообще ничего, и лечился обрыв только Stop→Start руками.
-        // Переход Failed→Reconnecting таблицей ЗАПРЕЩЁН (Failed ведёт только в
-        // Idle/Released), поэтому из отказа поднимаемся через session.start(),
-        // как это делает SrtlaStreamer.
+        // The guard used to require the Live/Connecting phase, but this is called
+        // from Failed — the notification's “Reconnect” button after a drop did
+        // nothing, and recovery required a manual Stop→Start. The Failed→Reconnecting
+        // transition is FORBIDDEN by the table (Failed only leads to Idle/Released),
+        // so recover from failure via session.start(), as SrtlaStreamer does.
         val url = currentUrl ?: return
-        // Ручное нажатие — явное «попробуй сейчас», поэтому лестница начинается
-        // заново, а не продолжается с тридцати секунд.
+        // A manual press explicitly means “try now,” so restart the retry ladder
+        // instead of continuing at thirty seconds.
         reconnector.reset()
         _state.update { it.copy(reconnectAttempt = 0) }
         when (session.phase) {
@@ -475,21 +475,20 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     override fun showCamera() = camera.showCamera()
 
     /**
-     * Звук сцены: микрофон, звук телефона или оба.
+     * Scene audio: microphone, phone audio, or both.
      *
-     * Осторожно с оверлеями: когда включён звук донатов, источником звука
-     * работает наш микшер [OverlayAudioSource], и подмена источника здесь его
-     * снимает — донаты в эфире замолчат до следующего переключения. Это
-     * известное ограничение, а не случайность: оба механизма претендуют на
-     * один и тот же слот источника звука.
+     * Be careful with overlays: when donation audio is enabled, our [OverlayAudioSource]
+     * mixer is the audio source, and replacing the source here removes it —
+     * donations go silent during the live stream until the next switch. This is a
+     * known limitation, not an accident: both mechanisms claim the same audio-source slot.
      */
     override fun setSceneAudio(
         mode: SceneAudio,
         projection: android.media.projection.MediaProjection?,
     ): Boolean {
         val source = when (mode) {
-            // Свой источник даже для чистого микрофона: он же считает уровень
-            // для индикатора в HUD (MicLevelMeter), а микширование выключено.
+            // Use our own source even for a plain microphone: it also calculates
+            // the level for the HUD indicator (MicLevelMeter), with mixing disabled.
             SceneAudio.MIC -> app.brix.streaming.overlay.OverlayAudioSource(meter = micMeter)
             SceneAudio.INTERNAL -> {
                 val p = projection ?: return false
@@ -502,9 +501,9 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
         }
         return runCatching {
             stream.changeAudioSource(source)
-            // Мьют, усиление и выбор устройства сбрасываются вместе с
-            // источником — подтверждаем их заново, как и везде. Мьют раньше
-            // здесь не подтверждался вовсе: смена сцены открывала микрофон.
+            // Mute, gain, and device selection reset with the source — reapply
+            // them, as elsewhere. Mute was not reapplied here before: changing
+            // scenes unmuted the microphone.
             configureAudio(audioSettings)
             setMuted(_state.value.micMuted)
             true
@@ -517,18 +516,18 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun setAdaptiveBitrate(enabled: Boolean) {
         _state.update { it.copy(adaptiveBitrateEnabled = enabled) }
-        // Включили посреди эфира — энкодер должен узнать текущее решение
-        // регулятора сразу, а не ждать первого изменения.
+        // Enabled mid-stream — the encoder must get the regulator's current
+        // decision immediately, not wait for the first change.
         if (enabled) applyAbrBitrate()
     }
 
     /**
-     * Передать энкодеру то, что решил регулятор.
+     * Pass the regulator's decision to the encoder.
      *
-     * Отдельный метод, потому что раньше битрейт уходил в энкодер ТОЛЬКО при
-     * изменении, а стартовое значение — нет. В итоге регулятор жил на своём
-     * initial, энкодер оставался на битрейте видеопрофиля из prepareVideo, и в
-     * эфир шло не то, что показывал HUD.
+     * This is a separate method because previously the bitrate was sent to the
+     * encoder ONLY when it changed, not at startup. As a result, the regulator
+     * used its initial value, the encoder kept the video-profile bitrate from
+     * prepareVideo, and the live stream did not match what the HUD showed.
      */
     private fun applyAbrBitrate() {
         if (!_state.value.adaptiveBitrateEnabled) return
@@ -543,15 +542,15 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun setMuted(muted: Boolean) {
         _state.update { it.copy(micMuted = muted) }
-        // Наш источник глушит сам, после замера уровня (индикатор при мьюте
-        // показывает голос серым); голый микрофон — средствами библиотеки.
+        // Our source mutes itself after measuring the level (the indicator shows
+        // the voice in gray while muted); the bare microphone uses library methods.
         when (val source = stream.audioSource) {
             is app.brix.streaming.overlay.OverlayAudioSource -> source.setMicMuted(muted)
             is MicrophoneSource -> if (muted) source.mute() else source.unMute()
         }
-        // Сцена «микрофон + звук телефона»: глушим микрофонную часть, звук
-        // телефона идёт дальше. Раньше этот источник падал мимо, и кнопка
-        // показывала «выключен», а голос шёл в эфир (аудит 23.09).
+        // “Microphone + phone audio” scene: mute the microphone part while phone
+        // audio continues. This source used to be missed, so the button showed
+        // “off” while the voice still went to the live stream (23.09 audit).
         (stream.audioSource as? com.pedro.encoder.input.sources.audio.MixAudioSource)?.let { mix ->
             if (muted) mix.mute() else mix.unMute()
         }
@@ -686,8 +685,8 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun onConnectionFailed(reason: String) {
         if (!session.matches(activeGen)) return
-        // Провалилась очередная попытка лестницы — не повод останавливаться:
-        // туннель, лифт и глухая зона кончаются, а эфир продолжается.
+        // Another retry-ladder attempt failed — no reason to stop: tunnels,
+        // elevators, and dead zones end, while the live stream continues.
         if (isReconnectAttempt) {
             if (updateSession(SessionPhase.Reconnecting)) reconnector.schedule()
             return
@@ -699,9 +698,9 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun onDisconnect() {
         if (!session.matches(activeGen)) return
-        // До 03.09 обрыв сразу переводил сессию в Failed, и на этом всё
-        // заканчивалось: автоматических попыток не было, а ручная кнопка из
-        // Failed не работала. Теперь — та же лестница, что у SRTLA.
+        // Before 03.09, a disconnect immediately moved the session to Failed and
+        // that was the end: there were no automatic attempts, and the manual
+        // button did not work from Failed. Now it uses the same retry ladder as SRTLA.
         if (session.phase == SessionPhase.Live || session.phase == SessionPhase.Connecting) {
             if (updateSession(SessionPhase.Reconnecting)) {
                 _state.update {
@@ -731,11 +730,11 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
     override fun onAuthSuccess() = Unit
 
     override fun onNewBitrate(bitrate: Long) {
-        // Одна строка канала вместо пустого блока в HUD. Бондинга у RTMP нет —
-        // сокет ровно один, поэтому доля всегда 100%, и это честно: блок
-        // показывает, куда идёт поток, а не сравнение путей. Байты копим сами:
-        // счётчика отправленного RootEncoder наружу не даёт, а onNewBitrate
-        // прилетает раз в секунду и несёт биты в секунду.
+        // One channel line instead of an empty HUD block. RTMP has no bonding —
+        // there is exactly one socket, so the share is always 100%, which is
+        // accurate: the block shows where the stream is going, not a path
+        // comparison. We accumulate bytes ourselves: RootEncoder exposes no sent
+        // counter, and onNewBitrate arrives once a second with bits per second.
         sentBytes += bitrate / 8
         val link = ConnectionStat(
             type = "rtmp",
@@ -759,8 +758,8 @@ class Streamer(context: Context) : ConnectChecker, LiveStreamer {
             }
             it.copy(status = status, phase = session.phase, connectedAtElapsedMs = connectedAt)
         }
-        // Та же строка, что у SRTLA: по ней разбираются полевые журналы и стенд
-        // (bench/). У RTMP и WHIP переходов в логе не было вовсе.
+        // Same line as in SRTLA: used to analyze field logs and the test rig
+        // (bench/). RTMP and WHIP transitions were not logged at all.
         Log.i(tag, "updateSession $to (from gen=$gen)")
         return true
     }

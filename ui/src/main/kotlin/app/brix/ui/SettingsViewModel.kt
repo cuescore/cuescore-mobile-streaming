@@ -69,18 +69,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // persisted settings off the main thread (H13: a synchronous disk + JSON
     // read in the ViewModel constructor blocked the UI on cold start).
     /**
-     * Тот самый объект-заглушка, с которого начинается жизнь до чтения диска.
+     * That very placeholder object from which things start before the disk is read.
      *
-     * Хранится отдельно, чтобы по нему можно было спросить «а это уже настоящие
-     * настройки или ещё подстава» — сравнением ПО ССЫЛКЕ. Флаг [settingsLoaded] на
-     * этот вопрос не отвечает: он живёт в своём потоке и поднимается раньше, чем
-     * новые настройки доходят до экрана. В эту щель успевал нарисоваться экран
-     * «добавьте сервер» при каждом запуске (14.09, поймано метками в логе:
-     * `settingsLoaded=true профилей=0` при трёх профилях в модели).
+     * Stored separately so we can ask of it, “are these real settings already,
+     * or still a placeholder?”—by comparing REFERENCES. The [settingsLoaded] flag does not
+     * answer this question: it lives in its own flow and is raised before
+     * the new settings reach the screen. In that gap, the
+     * “add a server” screen managed to appear on every launch (14.09, caught by log markers:
+     * `settingsLoaded=true profiles=0` with three profiles in the model).
      */
     private val placeholder = defaultAppSettings()
 
-    /** Настоящие ли это настройки, или ещё заглушка до чтения диска. */
+    /** Whether these are real settings or the placeholder before disk loading. */
     fun isPlaceholder(candidate: AppSettings): Boolean = candidate === placeholder
 
     private val _settings = MutableStateFlow(placeholder)
@@ -110,8 +110,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch(Dispatchers.IO) {
             _settings.value = loadSettings()
             _settingsLoaded.value = true
-            // Зрители нужны только в эфире: вне его опрос раз в минуту будил
-            // сеть впустую, в том числе со свёрнутым приложением (аудит 23.09).
+            // Viewers are only needed while live: otherwise, polling once a minute woke
+            // the network for nothing, including when the app was minimized (audit 23.09).
             twitch.startBackground { _settings.value.hud.showViewers && isLive() }
         }
         viewModelScope.launch {
@@ -187,9 +187,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         result.exceptionOrNull()?.let { e ->
             Log.e("SettingsViewModel", "Settings file corrupt, resetting to defaults", e)
         }
-        // Пустой список профилей чинится подстановкой одного профиля, а не
-        // сбросом всего файла: серверы, оверлеи и раскладка кнопок к нему
-        // отношения не имеют и терять их незачем.
+        // An empty profile list is fixed by inserting one profile, not by
+        // resetting the entire file: servers, overlays, and button layouts have
+        // nothing to do with it and need not be lost.
         return result.getOrNull()?.withStreamProfilesEnsured() ?: defaultAppSettings()
     }
 
@@ -208,13 +208,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private var debouncedPersistJob: Job? = null
 
     /**
-     * Отложенная запись для действий, которые пользователь делает подряд.
+     * Deferred persistence for actions the user performs in quick succession.
      *
-     * `store.save` — это сериализация всего файла настроек, `fsync` и копия в
-     * `.bak`. На тумблере в списке серверов каждый тап запускал такую запись, и
-     * при быстром переключении они выстраивались в очередь на однопоточном
-     * диспетчере: интерфейс отвечал, а состояние догоняло рывками. Память
-     * обновляем сразу, на диск пишем один раз, когда человек закончил.
+     * `store.save` serializes the entire settings file, calls `fsync`, and copies it to
+     * `.bak`. On the toggle in the server list, every tap triggered such a write, and
+     * when switching quickly they queued up on the single-threaded
+     * dispatcher: the UI responded while state caught up in jumps. Memory
+     * is updated immediately; we write to disk once when the user is done.
      */
     private fun persistDebounced(delayMs: Long = 400) {
         debouncedPersistJob?.cancel()
@@ -225,14 +225,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Сделать сервер активным — остальные выключаются.
+     * Make a server active—all others are disabled.
      *
-     * Ровно один активный, потому что так работает само приложение: экран эфира
-     * берёт `enabledServers.firstOrNull()`, а переключателя серверов там нет.
-     * Включить несколько было можно, но вещал всё равно первый по списку —
-     * остальные оставались мёртвым грузом, а флажок обещал не то, что делал.
-     * Отсюда и радиокнопка вместо тумблера: она не даёт выразить состояние,
-     * которого у приложения нет.
+     * Exactly one is active because that is how the app itself works: the live screen
+     * takes `enabledServers.firstOrNull()`, and there is no server switcher there.
+     * It was possible to enable several, but the first in the list would still broadcast—
+     * the rest were dead weight, and the checkbox promised something it did not do.
+     * Hence the radio button instead of a toggle: it cannot express a state
+     * that the app does not have.
      */
     fun setActiveServer(id: String) {
         _settings.value = _settings.value.copy(
@@ -280,10 +280,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveServerProfile(profile: ServerProfile) {
-        // Порядок сохраняем: раньше правка вырезала профиль и дописывала в
-        // конец, то есть любое сохранение переставляло его в списке. С
-        // тумблером прямо в списке это стало видно сразу — строка уезжала
-        // вниз под пальцем.
+        // Preserve the order: edits used to remove a profile and append it to the
+        // end, so every save moved it in the list. With the
+        // toggle directly in the list, this became obvious: the row moved
+        // down under the user's finger.
         val current = _settings.value.serverProfiles
         val updated = if (current.any { it.id == profile.id }) {
             current.map { if (it.id == profile.id) profile else it }
@@ -345,8 +345,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveWidget(config: SceneWidget) {
-        // Порядок в списке сохраняем: filterNot+plus переставлял бы правленый
-        // виджет в конец на каждом сохранении, и список тасовался бы сам собой.
+        // Preserve the list order: filterNot+plus would move the edited
+        // widget to the end on every save, and the list would shuffle by itself.
         val current = _settings.value.widgets
         val updated = if (current.any { it.id == config.id }) {
             current.map { if (it.id == config.id) config else it }
@@ -407,9 +407,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun deleteWidget(id: String) {
         _settings.value = _settings.value.copy(
             widgets = _settings.value.widgets.filterNot { it.id == id },
-            // Ссылки в сценах чистим тем же движением: иначе сцена держит
-            // идентификатор удалённого виджета, и он всплывает при импорте
-            // настроек или при возврате виджета с тем же id.
+            // Clean up scene references in the same operation: otherwise, a scene retains
+            // the ID of a deleted widget, which resurfaces when importing
+            // settings or restoring a widget with the same ID.
             scenes = _settings.value.scenes.map { it.copy(widgetIds = it.widgetIds.filterNot { w -> w == id }) },
         )
         persist()
@@ -438,12 +438,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Итог мастера первого запуска — одной записью.
+     * Persist the first-run wizard result in a single write.
      *
-     * Сервер и качество пишутся вместе с признаком «пройден», а не по шагам:
-     * иначе закрытое на середине приложение оставило бы половину настроек и
-     * снова открыло бы мастер поверх них. Сервер, если задан, сразу делается
-     * единственным активным — экран эфира берёт первый включённый.
+     * The server and quality are saved together with the “completed” flag, not step by step:
+     * otherwise, an app closed halfway through would leave half the settings and
+     * open the wizard over them again. If specified, the server is immediately made
+     * the only active server: the streaming screen uses the first enabled one.
      */
     fun completeOnboarding(
         server: ServerProfile?,
@@ -526,13 +526,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Мастер первого запуска, ветка «перенести из другого Brix или Moblin».
+     * First-run wizard, “import from another Brix or Moblin” branch.
      *
-     * В отличие от [importSharedConfig] (он дописывает к существующему), здесь
-     * ставить поверх нечего: у свежей установки один профиль «Default», и
-     * человек пришёл именно со своими настройками. Поэтому выбираем
-     * привезённый профиль, а активным делаем первый включённый сервер — ровно
-     * один, как требует экран эфира (см. [setActiveServer]).
+     * Unlike [importSharedConfig] (which appends to existing settings), here
+     * there is nothing to replace: a fresh install has one “Default” profile, and
+     * the user came specifically with their own settings. Therefore select
+     * the imported profile, and make the first enabled server active—exactly
+     * one, as required by the live screen (see [setActiveServer]).
      */
     fun completeOnboardingWithImport(
         config: app.brix.core.SharedConfig,
@@ -634,20 +634,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val current = _settings.value
         val updated = current.streamProfiles.map { profile ->
             if (profile.id != profileId) return@map profile
-            // Правило и его тест — в core (ProfileEditing.kt).
+            // The rule and its test are in core (ProfileEditing.kt).
             profile.copy(srtConnectionPriorities = profile.srtConnectionPriorities.withPriority(name, enabled, weight))
         }
         _settings.value = current.copy(streamProfiles = updated)
         if (commit) persist()
     }
 
-    /** [commit] = false, пока тянут ползунок усиления: память обновляется на
-     *  каждый шаг, а полная запись файла с fsync — один раз, когда отпустили. */
-    // --- Сцены ---
+    /** [commit] = false while dragging the gain slider: memory is updated on
+     *  every step, while the full file write with fsync happens once, on release. */
+    // --- Scenes ---
     //
-    // Модель Scene и поля AppSettings.scenes/selectedSceneId лежали в коде с
-    // самого начала и не читались НИКЕМ: четвёртый за сегодня случай мёртвой
-    // модели. Здесь они наконец оживают.
+    // The Scene model and AppSettings.scenes/selectedSceneId fields had been in the code from
+    // the beginning and were read by NOBODY: the fourth instance of a dead
+    // model found today. Here they finally come to life.
 
     fun saveScene(scene: Scene) {
         val current = _settings.value.scenes
@@ -658,9 +658,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
         _settings.value = _settings.value.copy(
             scenes = updated,
-            // Первая созданная сцена сразу становится активной: сцена, которую
-            // никто не выбрал, ничего не делает, и человек решил бы, что не
-            // работает.
+            // The first scene created immediately becomes active: a scene that
+            // no one selected does nothing, and the user would think it
+            // doesn't work.
             selectedSceneId = _settings.value.selectedSceneId ?: scene.id,
         )
         persist()

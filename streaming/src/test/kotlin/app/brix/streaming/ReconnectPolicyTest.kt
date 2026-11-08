@@ -41,11 +41,11 @@ class ReconnectPolicyTest {
     }
 
     /**
-     * Расписание конечное, поэтому при параллельных вызовах ни одна ступень не
-     * должна выдаваться дважды и ни одна не должна пропасть: `attempt++` без
-     * синхронизации — это чтение-изменение-запись, и в бою его дёргают три
-     * потока (start/reconnect под монитором стримера, onConnectionSuccess из
-     * транспортного колбэка и nextDelayMs из IO-корутины).
+     * The schedule is finite, so under concurrent calls no step should be
+     * returned twice or go missing: unsynchronized `attempt++` is a
+     * read-modify-write, and in production it is called by three threads
+     * (start/reconnect under the streamer monitor, onConnectionSuccess from a
+     * transport callback, and nextDelayMs from an IO coroutine).
      */
     @Test
     fun `concurrent nextDelayMs hands out each step exactly once`() {

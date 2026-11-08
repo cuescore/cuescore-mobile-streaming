@@ -44,14 +44,14 @@ private data class MascotLook(val face: String, val blinkFace: String, val color
 private fun lookFor(state: MascotState): MascotLook = when (state) {
     MascotState.OFFLINE -> MascotLook("?_?", "?-?", Color(0xFF8A857E))
     MascotState.IDLE -> MascotLook("•_•", "-_-", Color(0xFFFFC257))
-    // Второе лицо — это МОРГАНИЕ, то есть закрытые глаза. Было «^o^»: круглый
-    // глаз посреди довольного лица читается совсем не как моргание (владелец,
-    // 14.09 — «во время стрима у него очко на лице появляется»).
+    // The second face is a BLINK, i.e. closed eyes. It used to be “^o^”: a round
+    // eye in the middle of a happy face reads nothing like a blink (the owner,
+    // 14.09: “during the stream he gets a butthole on his face”).
     MascotState.LIVE -> MascotLook("^_^", "-_-", Color(0xFFFFC257))
     MascotState.MUTED -> MascotLook("o_x", "-_x", Color(0xFFFFC257))
     MascotState.RECONNECTING -> MascotLook(">.<", "-.-", Color(0xFFFFC257))
     MascotState.OVERHEAT -> MascotLook("x_x", "x_x", Color(0xFFFF6B5B))
-    // Тот же круглый глаз, что был у LIVE, и та же причина его убрать.
+    // The same round eye that LIVE used to have, and the same reason to remove it.
     MascotState.DONATION -> MascotLook("\$_\$", "\$_\$", Color(0xFFFFC257))
 }
 
@@ -60,36 +60,36 @@ private val CardBorder = Color(0xFF3A3A3D)
 private val OverheatGlow = Color(0xFFFF6B5B)
 private val EaseInOutSine = CubicBezierEasing(0.45f, 0f, 0.55f, 1f)
 
-/** Около 2.5 с дрожи при переподключении (цикл 280 мс). */
+/** About 2.5 s of wobbling during reconnection (280 ms cycle). */
 private const val ALARM_WOBBLE_CYCLES = 9
 
-/** Три пульса рамки при перегреве (цикл 1 с). */
+/** Three border pulses during overheating (1 s cycle). */
 private const val ALARM_GLOW_CYCLES = 3
 
 /**
  * Live "kaomoji" status mascot — replaces a plain icon in the quick-button
- * grid. Не просто смена глифа: моргает по случайному таймеру, подпрыгивает
- * при смене состояния, на донат, коротко дрожит при переподключении и
- * пульсирует рамкой при перегреве. Постоянного движения нет — см. замер
- * в теле функции.
+ * grid. Not just a glyph change: it blinks on a random timer, bounces
+ * when the state changes or on a donation, briefly wobbles during reconnection,
+ * and pulses its border when overheating. There is no constant motion — see the
+ * measurement in the function body.
  * Purely decorative — no click behavior of its own.
  */
 @Composable
 fun BrixMascot(state: MascotState, modifier: Modifier = Modifier) {
-    // Бесконечных анимаций здесь нет НАМЕРЕННО. Замер на S21 23.09, голый эфир
-    // SRTLA: пока маскот «дышал» (бесконечный transition), интерфейс рисовал
-    // 60 кадров/с весь эфир — главный поток 30% ядра, поток отрисовки 32%.
-    // Без маскота — 8 кадров за 5 с, главный поток 7.5%, поток отрисовки из
-    // топа пропал. То есть декоративное покачивание стоило больше половины
-    // ядра, больше всего транспорта на двух каналах. Правило для этого файла:
-    // анимация только как короткий отклик на событие, в покое кадр стоит.
+    // There are deliberately no infinite animations here. Measurement on an S21
+    // on 23.09 during a bare SRTLA stream: while the mascot “breathed” (an infinite
+    // transition), the UI drew 60 fps for the whole stream — main thread 30% CPU,
+    // render thread 32%. Without the mascot: 8 frames in 5 s, main thread 7.5%,
+    // render thread absent from the top CPU consumers. Decorative swaying cost
+    // more than half a core, more than all transport on two links. Rule for this
+    // file: animate only as a brief response to an event; stay still at rest.
 
     // Blinks on its own random rhythm, independent of state changes, so it
     // never looks like it blinks "because" something happened — that's what
-    // actually reads as alive rather than reactive-only. В покое моргает тоже:
-    // 14.09 я убрал это по жалобе «в афк меняется выражение», но жалоба была
-    // про другое (см. blinkFace у LIVE), и моргание вернули. Два кадра раз в
-    // 3–5 секунд — это почти бесплатно, в отличие от дыхания.
+    // actually reads as alive rather than reactive-only. It blinks at rest too:
+    // on 14.09 I removed that after the complaint “its expression changes while AFK,”
+    // but that complaint was about something else (see blinkFace for LIVE), so
+    // blinking was restored. Two frames every 3–5 seconds are nearly free, unlike breathing.
     var blinking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -115,11 +115,10 @@ fun BrixMascot(state: MascotState, modifier: Modifier = Modifier) {
         }
     }
 
-    // Тревожные состояния привлекают внимание движением только первые пару
-    // секунд, дальше стоят. Раньше дрожь при переподключении и пульс рамки
-    // при перегреве крутились всё время, пока длилось состояние, — то есть
-    // при перегреве мы добавляли нагрузку ровно тогда, когда телефону и так
-    // хуже всего (владелец, 23.09).
+    // Alarm states draw attention with motion only for the first couple of seconds,
+    // then stay still. Previously, reconnection wobble and the overheating border
+    // pulse continued for as long as the state lasted — adding load while the phone
+    // was already at its worst (the owner, 23.09).
     val wobble = remember { Animatable(0f) }
     LaunchedEffect(state) {
         if (state == MascotState.RECONNECTING) {
@@ -140,7 +139,7 @@ fun BrixMascot(state: MascotState, modifier: Modifier = Modifier) {
                 glow.animateTo(0.25f, tween(500, easing = EaseInOutSine))
                 glow.animateTo(0.9f, tween(500, easing = EaseInOutSine))
             }
-            // Дальше статичная яркая рамка: перегрев виден, но ничего не движется.
+            // Then a bright, static border: overheating remains visible, but nothing moves.
             glow.animateTo(1f, tween(200))
         } else {
             glow.snapTo(1f)

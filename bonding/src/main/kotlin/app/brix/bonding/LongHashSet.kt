@@ -1,18 +1,17 @@
 package app.brix.bonding
 
 /**
- * Множество порядковых номеров пакетов без упаковки в объекты.
+ * Packet sequence-number set without boxing.
  *
- * Зачем: `packetsInFlight` был `HashSet<Long>`, а он упаковывает каждый номер —
- * при добавлении, при поиске и на каждом элементе при полном обходе. Замер
- * 31.08 показал ~350 мкс процессора на пакет при норме в единицы-десятки, и
- * обработка пакетов грела втрое сильнее энкода. Здесь открытая адресация с
- * линейным пробированием: ни одной аллокации на операцию.
+ * Why: `packetsInFlight` was `HashSet<Long>`, boxing each number on insertion,
+ * lookup and every element of a full traversal. Measurement 31.08 showed
+ * ~350 microseconds of CPU per packet instead of single/tens of microseconds,
+ * with packet processing generating three times the heat of encoding.
+ * Open addressing with linear probing avoids all per-operation allocation.
  *
- * Номера SRT лежат в диапазоне 0..2^32-1, поэтому -1 свободен и служит меткой
- * пустой ячейки.
+ * SRT numbers are in 0..2^32-1, leaving -1 available as the empty-slot marker.
  *
- * Не потокобезопасен: вызывающий держит свой монитор, как и раньше.
+ * Not thread-safe: the caller holds its own monitor, as before.
  */
 internal class LongHashSet(initialCapacity: Int = 2048) {
 
@@ -53,15 +52,15 @@ internal class LongHashSet(initialCapacity: Int = 2048) {
         }
     }
 
-    /** Удалить всё, что подходит под условие. Возвращает true, если что-то ушло. */
+    /** Remove everything matching the predicate. Return true if anything was removed. */
     inline fun removeIf(predicate: (Long) -> Boolean): Boolean {
         var removed = false
         var i = 0
         while (i < capacity()) {
             val k = keyAt(i)
             if (k != EMPTY && predicate(k)) {
-                // Сдвиг при удалении может перенести элемент в уже пройденную
-                // ячейку, поэтому позицию не увеличиваем и проверяем заново.
+                // Deletion shifts may move an element into an already visited
+                // slot, so recheck without advancing the position.
                 removeSlot(i)
                 removed = true
             } else {
@@ -76,7 +75,7 @@ internal class LongHashSet(initialCapacity: Int = 2048) {
         size = 0
     }
 
-    /** Для removeIf: работа со слотами напрямую, без создания итератора. */
+    /** For removeIf: operate directly on slots without creating an iterator. */
     @PublishedApi
     internal fun capacity(): Int = keys.size
 
@@ -90,9 +89,8 @@ internal class LongHashSet(initialCapacity: Int = 2048) {
     }
 
     /**
-     * Удаление при открытой адресации: пустую ячейку нельзя оставить посреди
-     * цепочки пробирования, иначе следующие за ней элементы станут ненаходимы.
-     * Классический сдвиг по Кнуту (алгоритм R, 6.4).
+     * Open-addressing deletion: leaving an empty slot in a probe chain makes
+     * subsequent elements unfindable. Classic Knuth shift (algorithm R, 6.4).
      */
     private fun removeAt(pos: Int) {
         var i = pos
@@ -103,7 +101,7 @@ internal class LongHashSet(initialCapacity: Int = 2048) {
             val k = keys[j]
             if (k == EMPTY) return
             val home = index(k)
-            // Стоит ли k «за» дырой в своей цепочке — тогда его надо подвинуть.
+            // If k lies "beyond" the hole in its probe chain, shift it.
             val shouldMove = if (j > i) home <= i || home > j else home <= i && home > j
             if (shouldMove) {
                 keys[i] = k
@@ -122,8 +120,8 @@ internal class LongHashSet(initialCapacity: Int = 2048) {
     }
 
     private fun index(value: Long): Int {
-        // Перемешивание: номера идут подряд, и без него линейное пробирование
-        // вырождается в длинные цепочки.
+        // Mix sequential numbers to prevent linear probing from degenerating
+        // into long chains.
         var h = value * -0x61c8864680b583ebL
         h = h xor (h ushr 32)
         return (h.toInt()) and mask

@@ -118,12 +118,12 @@ class StreamSession {
      *
      * @return true if the transition was valid and applied, false otherwise.
      */
-    // Генерацию читаем ВНУТРИ лока, а не в аргументе вызова: между чтением
-    // _generation и входом в двухаргументный transition другой поток успевает
-    // сделать start()/reset() и увеличить её. Тогда «переход в текущей сессии»
-    // приносил старую генерацию, matches её отклонял, и переход молча терялся.
-    // Комментарий класса обещает, что каждое чтение generation под локом —
-    // здесь это обещание и нарушалось.
+    // Read the generation INSIDE the lock, not as a call argument: between reading
+    // _generation and entering the two-argument transition, another thread can
+    // call start()/reset() and increment it. Then “transition in the current session”
+    // carried the old generation, matches rejected it, and the transition was silently lost.
+    // The class comment promises every read of generation is under the lock —
+    // this was where that promise was broken.
     fun transition(to: SessionPhase): Boolean = synchronized(lock) {
         transition(to, _generation)
     }

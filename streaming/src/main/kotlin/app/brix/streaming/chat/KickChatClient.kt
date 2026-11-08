@@ -81,7 +81,7 @@ class KickChatClient(
         openSocket()
     }
 
-    /** Эмодзи 7TV/BTTV — см. [TwitchChatClient.setThirdPartyEmotes]. */
+    /** For 7TV/BTTV emotes, see [TwitchChatClient.setThirdPartyEmotes]. */
     fun setThirdPartyEmotes(enabled: Boolean) {
         thirdPartyEnabled = enabled
         val id = userId
@@ -140,8 +140,8 @@ class KickChatClient(
                 if (socket !== mySocket) return
                 when (val event = KickPusherParser.parse(line)) {
                     is KickPusherEvent.ChatMessage -> append(event)
-                    // Без ответа тихий чат переподключался бы каждые ~2 минуты
-                    // и терял сообщения на время переподключения (аудит 23.09).
+                    // Without a response, a quiet chat would reconnect every ~2 minutes
+                    // and miss messages while reconnecting (23.09 audit).
                     KickPusherEvent.Ping -> mySocket.send("""{"event":"pusher:pong","data":{}}""")
                     KickPusherEvent.Other -> Unit
                 }

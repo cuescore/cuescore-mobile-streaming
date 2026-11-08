@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Android 12+ рисует заставку сам, до нашего кода, и берёт цвет отсюда.
-         Без этого он брал белый фон светлой темы — тот самый белый экран на
-         старте, который владелец видел и о котором писал (14.09 и 15.09). -->
+    <!-- Android 12+ draws the splash screen itself, before our code, and gets the color from here.
+         Without this, it used the light theme’s white background — the same white screen at
+         startup that the owner saw and wrote about (14.09 and 15.09). -->
     <style name="Theme.Brix" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_cuescore_logo</item>

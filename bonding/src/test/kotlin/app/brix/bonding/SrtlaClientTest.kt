@@ -118,9 +118,8 @@ class SrtlaClientTest {
         return field.get(target)
     }
 
-    /** Карантин отказывается работать на неподнятом линке (`started`/`running`),
-     *  а `addConnection` соединение не стартует — поднимаем флаги вручную, как
-     *  и состояние в [setRegistered]. */
+    /** Quarantine requires a started/running link, while `addConnection` does not
+         *  start it. Set the flags manually, as with state in [setRegistered]. */
     private fun setLive(connection: SrtlaConnection) {
         for (name in listOf("started", "running")) {
             val field = connection.javaClass.getDeclaredField(name)
@@ -162,19 +161,19 @@ class SrtlaClientTest {
         val client = SrtlaClient()
         val dead = client.addConnection("wifi", 1f)
         setRegistered(dead)
-        // Второй линк есть, но выключен весом (priority 0) -> score() = -1,
-        // раздавать по нему нельзя, значит отказавший линк остаётся
-        // единственным и чинится немедленно.
+        // Second link exists but is disabled (priority 0) -> score() = -1.
+        // It cannot carry traffic, so the failed link remains the only path
+        // and is repaired immediately.
         client.addConnection("cellular", 0f)
 
         assertEquals(SrtlaClient.SendFailureAction.RETRY_NOW, client.decideSendFailure(dead))
     }
 
     /**
-     * Главное свойство карантина: линк остаётся в бондинге. До правки при живом
-     * соседе делался `removeConnection`, и вернуться линк уже не мог —
-     * `BondingNetworkManager` схлопывает повторный `onAvailable` для той же
-     * `Network`, а интерфейс никуда не девался.
+     * Quarantine's key property: the link remains bonded. Previously a live
+     * neighbor caused `removeConnection`, preventing the link's return:
+     * `BondingNetworkManager` coalesces repeated `onAvailable` for the same
+     * `Network` while the interface remains present.
      */
     @Test
     fun `quarantined link stays in the client and leaves the rotation`() {
@@ -194,8 +193,8 @@ class SrtlaClientTest {
     }
 
     /**
-     * `onSendFailed` прилетает на каждый неудавшийся пакет — при мёртвой сети
-     * это сотни раз в секунду. Засов должен пропустить ровно один подъём.
+     * `onSendFailed` fires for every failed packet, hundreds of times per second
+     * on a dead network. The latch must allow exactly one recovery attempt.
      */
     @Test
     fun `a burst of quarantine calls schedules exactly one retry`() {

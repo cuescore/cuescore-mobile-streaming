@@ -18,8 +18,8 @@ data class ChatMessage(
     val colorHex: String?,
     val text: String,
     val timestampMs: Long,
-    /** Текст, разбитый на куски «слова / эмодзи». [text] остаётся рядом как
-     *  плоская версия — эмодзи там своими именами, так её и читать, и искать. */
+    /** Text split into “words / emoji” chunks. [text] remains alongside it as a
+     *  flat version — emoji there use their names, which makes it readable and searchable. */
     val parts: List<ChatPart> = listOf(ChatPart.Text(text)),
 )
 
@@ -27,9 +27,9 @@ sealed class ChatPart {
     data class Text(val value: String) : ChatPart()
 
     /**
-     * Картинка в строке. [aspect] — ширина к высоте; у широких эмодзи 7TV
-     * бывает 3:1, и квадратное место сплющило бы их. Где площадка размер не
-     * сообщает (Twitch, Kick, BTTV), остаётся квадрат.
+     * Image in a line. [aspect] is width-to-height; wide 7TV emotes can be 3:1,
+     * and a square slot would squash them. If a platform does not report a size
+     * (Twitch, Kick, BTTV), it stays square.
      */
     data class Emote(val name: String, val url: String, val aspect: Float = 1f) : ChatPart()
 }

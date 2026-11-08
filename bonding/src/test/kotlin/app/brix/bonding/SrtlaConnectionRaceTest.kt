@@ -75,8 +75,8 @@ class SrtlaConnectionRaceTest {
             )
             @Suppress("UNCHECKED_CAST")
             assertEquals(1, getField(connection, "regErrCount"))
-            // Аудит 23.09: без этого лестница REG2 продолжала бить в сервер,
-            // хотя попытка вроде бы отложена.
+            // Audit 23.09: without this, REG2 retries kept hitting the server
+            // despite the supposedly delayed attempt.
             assertEquals("REG_ERR must park the link until the delayed retry", "IDLE", getField(connection, "state").toString())
 
             connection.stop()
@@ -163,8 +163,8 @@ class SrtlaConnectionRaceTest {
     }
 
     /**
-     * Карантин не должен воскрешать остановленный линк — та же защита, что уже
-     * стоит на отложенном retry после REG_ERR, только вход другой.
+     * Quarantine must not revive a stopped link: same protection as the
+     * delayed retry after REG_ERR, through a different entry point.
      */
     @Test
     fun `stop during quarantine prevents resurrection`() {
@@ -185,8 +185,8 @@ class SrtlaConnectionRaceTest {
             assertEquals(false, getField(connection, "running"))
             val threadNow = getField(connection, "readThread") as Thread?
             assertTrue(threadNow === oldThread || threadNow?.isAlive != true)
-            // stop() обязан обнулить и лестницу, иначе следующая сессия
-            // стартовала бы уже с накопленной задержкой.
+            // stop() must reset backoff too, otherwise the next session
+            // starts with accumulated delay.
             assertEquals(false, getField(connection, "quarantinePending"))
             assertEquals(0, getField(connection, "quarantineAttempts"))
         } finally {
@@ -195,9 +195,9 @@ class SrtlaConnectionRaceTest {
     }
 
     /**
-     * Успешная регистрация снимает карантин и обнуляет лестницу задержек:
-     * линк вернулся в группу, и следующий отказ должен снова начинаться с
-     * секунды, а не с накопленной минуты.
+     * Successful registration clears quarantine and resets backoff:
+     * the link rejoined the group, so the next failure must start at
+     * one second, not an accumulated minute.
      */
     @Test
     fun `successful registration clears quarantine`() {
@@ -207,14 +207,14 @@ class SrtlaConnectionRaceTest {
             val delegate = RecordingDelegate()
             val connection = startRegisteredConnection(fake, delegate)
 
-            // Уводим в карантин с большой задержкой, чтобы попытка не успела
-            // отработать и состояние осталось наблюдаемым.
+            // Quarantine with a long delay so the attempt cannot run yet
+            // and its state remains observable.
             connection.quarantine("test", 60_000L)
             assertEquals(true, getField(connection, "quarantinePending"))
             assertEquals(1, getField(connection, "quarantineAttempts"))
 
-            // Регистрация приходит своим путём: состояние WAIT_FOR_REGISTER_RESPONSE
-            // плюс REG3 от приёмника.
+            // Registration takes its own path: WAIT_FOR_REGISTER_RESPONSE
+            // state plus REG3 from the receiver.
             setField(connection, "state", waitForRegisterResponseState)
             invokePrivate(connection, "handleSrtlaReg3")
 
@@ -228,8 +228,8 @@ class SrtlaConnectionRaceTest {
     }
 
     /**
-     * Лестница растёт, а не топчется на месте: каждый следующий вход в карантин
-     * увеличивает номер попытки. Именно счётчик определяет задержку.
+     * Backoff grows rather than standing still: each quarantine entry increases
+     * the attempt number, which determines the delay.
      */
     @Test
     fun `repeated quarantine walks up the ladder`() {
@@ -240,8 +240,8 @@ class SrtlaConnectionRaceTest {
             for (expected in 1..3) {
                 connection.quarantine("test", 60_000L)
                 assertEquals(expected, getField(connection, "quarantineAttempts"))
-                // Снимаем засов вручную — в бою его снимает отложенная попытка
-                // прямо перед стартом.
+                // Clear the latch manually; in production the delayed attempt
+                // clears it just before starting.
                 setField(connection, "quarantinePending", false)
             }
             connection.stop()
@@ -262,10 +262,10 @@ class SrtlaConnectionRaceTest {
     }
 
     /**
-     * Аудит 23.09: reconnect() закрывал сокет, не отвязав его, и старый поток
-     * чтения крутился на закрытом сокете без паузы. При неудачном подъёме
-     * (DNS не ответил) спин длился до конца эфира, а started=false не давал
-     * карантину запланировать повтор — линк был мёртв насовсем.
+     * Audit 23.09: reconnect() closed the socket without detaching it, so the
+     * old reader spun continuously on the closed socket. Failed startup
+     * (DNS did not answer) left it spinning for the entire stream, while
+     * started=false prevented quarantine retries, permanently killing the link.
      */
     @Test
     fun `failed reconnect stops the old reader and stays eligible for quarantine retry`() {

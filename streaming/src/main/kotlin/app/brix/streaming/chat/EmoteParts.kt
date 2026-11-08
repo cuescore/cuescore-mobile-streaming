@@ -1,20 +1,20 @@
 package app.brix.streaming.chat
 
 /**
- * Разбор эмодзи в куски сообщения — чистые функции, без сети.
+ * Split emotes into message parts — pure functions, no network access.
  *
- * Картинки берём НЕподвижные (static-варианты у Twitch и 7TV, первый кадр у
- * остальных): чат рисуется на телефоне, который одновременно ведёт эфир и
- * греется, а анимация десятков эмодзи — это декодирование кадров на каждом
- * обновлении экрана. Подход подсмотрен у Moblin (`Integrations/Emotes`), у него
- * тоже есть «неподвижный» адрес на каждую картинку.
+ * We use STILL images (static variants from Twitch and 7TV, the first frame for
+ * other providers): chat is rendered on a phone that is also streaming and
+ * heating up, and animating dozens of emotes means decoding frames on every
+ * screen update. The approach is borrowed from Moblin (`Integrations/Emotes`),
+ * which also has a still-image URL for each image.
  */
 object EmoteParts {
 
     /**
-     * Twitch присылает эмодзи в теге `emotes`: `25:0-4,12-16/1902:6-10`.
-     * Позиции — в **кодовых точках** Unicode, не в символах Kotlin: эмодзи-смайл
-     * из двух суррогатов раньше в строке сдвинул бы все позиции после себя.
+     * Twitch sends emotes in the `emotes` tag: `25:0-4,12-16/1902:6-10`.
+     * Positions are in Unicode **code points**, not Kotlin characters: a smiley
+     * emoji made of two surrogate units would otherwise shift every later position.
      */
     fun twitch(text: String, emotesTag: String?): List<ChatPart> {
         if (emotesTag.isNullOrBlank()) return listOf(ChatPart.Text(text))
@@ -36,7 +36,7 @@ object EmoteParts {
         val parts = mutableListOf<ChatPart>()
         var cursor = 0
         for ((start, end, id) in ranges) {
-            if (start < cursor) continue // перекрытие — битый тег, берём первое
+            if (start < cursor) continue // Overlap means a malformed tag; keep the first.
             if (start > cursor) parts += ChatPart.Text(slice(cursor, start))
             parts += ChatPart.Emote(
                 name = slice(start, end + 1),
@@ -50,7 +50,7 @@ object EmoteParts {
 
     private val kickEmote = Regex("""\[emote:(\d+):([^]]+)]""")
 
-    /** Kick вставляет эмодзи прямо в текст: `[emote:37226:KEKW]`. */
+    /** Kick embeds emotes directly in the text: `[emote:37226:KEKW]`. */
     fun kick(content: String): List<ChatPart> {
         val parts = mutableListOf<ChatPart>()
         var cursor = 0
@@ -66,7 +66,7 @@ object EmoteParts {
         return parts.ifEmpty { listOf(ChatPart.Text(content)) }
     }
 
-    /** Плоский текст для [ChatMessage.text]: эмодзи — своими именами. */
+    /** Plain text for [ChatMessage.text]: emotes are represented by their names. */
     fun plain(parts: List<ChatPart>): String = parts.joinToString("") {
         when (it) {
             is ChatPart.Text -> it.value
@@ -75,9 +75,9 @@ object EmoteParts {
     }
 
     /**
-     * Эмодзи 7TV и BTTV: у них нет разметки в сообщении, это просто слова,
-     * совпавшие с именем из набора канала. Режем только текстовые куски и
-     * только по пробелам — пробелы сохраняем, чтобы строка не слиплась.
+     * 7TV and BTTV emotes have no markup in the message; they're just words
+     * matching a name from the channel's set. Split only text parts and only on
+     * whitespace — preserve spaces so the string doesn't get joined together.
      */
     fun applyWordEmotes(parts: List<ChatPart>, emotes: Map<String, ChatPart.Emote>): List<ChatPart> {
         if (emotes.isEmpty()) return parts

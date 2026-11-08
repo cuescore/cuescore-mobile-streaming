@@ -28,9 +28,9 @@ class StreamSessionTest {
         assertEquals(SessionPhase.Released, s.phase)
     }
 
-    /** Аудит 23.09: ручное переподключение SRTLA оставляло фазу Reconnecting,
-     *  и успех упирался в запрещённый прямой переход в Live. Правильный путь —
-     *  через Connecting; тест фиксирует обе половины контракта. */
+    /** Audit 23.09: manual SRTLA reconnection left the phase at Reconnecting,
+     *  and success hit a forbidden direct transition to Live. The correct path is
+     *  via Connecting; the test verifies both halves of the contract. */
     @Test
     fun `reconnect must go through Connecting to reach Live`() {
         val s = StreamSession()
@@ -236,11 +236,11 @@ class StreamSessionTest {
     }
 
     /**
-     * Обе проверки ниже — не про саму сессию, а про то, на что опирается
-     * переподключение RTMP/WHIP. Ошибиться здесь легко и незаметно: неверный
-     * переход возвращает false молча, и правка выглядит сделанной, оставаясь
-     * мёртвой. Ровно так и было написано прежнее `onDisconnect`, которое
-     * пыталось увести Live прямо в Failed.
+     * Both checks below concern the assumptions behind RTMP/WHIP reconnection,
+     * not the session itself. Mistakes are easy to miss: an invalid transition
+     * silently returns false, leaving an apparently completed change ineffective.
+     * The old `onDisconnect` did exactly this, attempting to move directly
+     * from Live to Failed.
      */
     @Test
     fun `Live не уходит в Failed напрямую — только через Reconnecting`() {
@@ -266,7 +266,7 @@ class StreamSessionTest {
         assertFalse("Failed->Reconnecting запрещён", s.transition(SessionPhase.Reconnecting))
         assertEquals(SessionPhase.Failed, s.phase)
 
-        // Путь, которым пользуется ручная кнопка «Переподключить».
+        // The path used by the manual “Reconnect” button.
         val gen = s.start()
         assertNotNull(gen)
         assertEquals(SessionPhase.Preparing, s.phase)

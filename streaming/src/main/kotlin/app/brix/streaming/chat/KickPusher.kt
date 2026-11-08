@@ -36,8 +36,8 @@ sealed class KickPusherEvent {
         val parts: List<ChatPart> = listOf(ChatPart.Text(text)),
     ) : KickPusherEvent()
 
-    /** Сервер Pusher проверяет, живо ли соединение, и ждёт `pusher:pong`
-     *  в пределах activity_timeout (обычно 120 с) — иначе вправе закрыть. */
+    /** The Pusher server checks that the connection is alive and expects `pusher:pong`
+     *  within activity_timeout (usually 120 s) — otherwise it may close it. */
     data object Ping : KickPusherEvent()
 
     data object Other : KickPusherEvent()
@@ -86,8 +86,8 @@ private val emoteTag = Regex("""\[emote:\d+:([^]]+)]""")
 object KickPusherParser {
 
     fun parse(rawFrame: String): KickPusherEvent {
-        // Служебные события Pusher несут в data объект, а не строку, и
-        // строгий разбор конверта на них падает — имя события читаем отдельно.
+        // Pusher control events carry an object, not a string, in data, so strict
+        // envelope parsing fails on them — read the event name separately.
         val eventName = runCatching {
             json.parseToJsonElement(rawFrame).jsonObject["event"]?.jsonPrimitive?.content
         }.getOrNull()

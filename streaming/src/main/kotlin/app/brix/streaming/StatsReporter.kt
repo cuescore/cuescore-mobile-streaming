@@ -12,12 +12,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Раз в секунду снимает состояние бондинга и транспорта: обновляет то, что
- * видит HUD, и пишет одну машиночитаемую строку в лог.
+ * Samples bonding and transport state once a second, updates HUD-visible
+ * values and writes one machine-readable log line.
  *
- * Выделено из [SrtlaStreamer] — обязанность чисто читающая, ни на что в тракте
- * не влияет, и держать её в одном классе с камерой, оверлеями и
- * переподключением было незачем.
+ * Extracted from [SrtlaStreamer]: a read-only responsibility with no effect
+ * on the pipeline, unrelated to camera, overlays and reconnection.
  */
 internal class StatsReporter(
     private val appContext: Context,
@@ -25,22 +24,22 @@ internal class StatsReporter(
     private val stream: SrtlaStream,
     private val scope: CoroutineScope,
     private val phase: () -> SessionPhase,
-    /** Сколько раз за сессию переподключались. В логе этого не было, а при
-     *  разборе чужого отчёта «рвалось ли и сколько раз» — первый вопрос. */
+    /** Session reconnect count. Previously absent from logs, although "did it
+         *  disconnect, and how often?" is the first question when analyzing a report. */
     private val reconnects: () -> Int,
-    /** Что за сессию не меняется — энкодер, кодек, разрешение. Пишется одной
-     *  строкой перед заголовком CSV: в каждой секунде это был бы дубль. */
+    /** Session constants: encoder, codec, resolution. One line before the CSV
+         *  header avoids duplicating them every second. */
     private val sessionNote: () -> String,
     private val updateState: ((StreamState) -> StreamState) -> Unit,
-    /** Тик часов эфира. Отдельно от [updateState] нарочно: см. LiveStreamer.uptimeTick. */
+    /** Stream clock tick. Deliberately separate from [updateState]; see LiveStreamer.uptimeTick. */
     private val publishTick: (Long) -> Unit,
 ) {
     private var job: Job? = null
 
     private val recorder = SessionRecorder(appContext)
 
-    /** Пишем ли сессию в файл. Читается на старте эфира, а не на каждом тике:
-     *  переключить запись посреди эфира значило бы получить файл с дырой. */
+    /** Whether to write the session to a file. Read on stream start, not every tick:
+         *  toggling recording mid-stream would leave a gap in the file. */
     @Volatile
     var debugLog: Boolean = false
 
@@ -66,9 +65,9 @@ internal class StatsReporter(
         job = null
     }
 
-    /** Уровень теплового троттлинга устройства, в одной строке с цифрами
-     *  транспорта: на телефоне жара и битрейт — это один и тот же размен, а
-     *  читая их из двух разных мест, потом невозможно было их сопоставить.
+    /** Device thermal throttling level alongside transport metrics: on a phone,
+         *  heat and bitrate are the same tradeoff; reading them from separate
+         *  sources made later correlation impossible.
      *  NONE/LIGHT/MODERATE/SEVERE/CRITICAL/EMERGENCY/SHUTDOWN. */
     private fun thermalStatus(): String = runCatching {
         val pm = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -83,23 +82,21 @@ internal class StatsReporter(
     }.getOrDefault("?")
 
     /**
-     * Одна машиночитаемая строка состояния в секунду, тег `BrixStat`.
+     * One machine-readable state line per second, tagged `BrixStat`.
      *
-     * Журнал событий рассказывает, что случилось; для сессии с бондингом нужно
-     * другое — как выглядели линки В ТОТ МОМЕНТ. Поля выбраны по реальным
-     * разборам: `in=` (сколько секунд назад по линку хоть что-то пришло) — это
-     * то, чем выдаёт себя мёртвый входящий канал, пока линк ещё зарегистрирован
-     * и ещё отчитывается об исходящих байтах. Ровно та картина, что стоит за
-     * «Wi-Fi один работает, добавляешь соту — картинка сыпется», и никакой HUD
-     * в приложении её сейчас не покажет. `srtrtt=0` означает, что ABR не идёт.
+     * Event logs explain what happened; bonded sessions need link state AT
+     * THAT MOMENT. Fields reflect actual investigations: `in=` (seconds since
+     * anything arrived on the link) reveals a dead inbound path while the link
+     * remains registered and reports outbound bytes. This is the situation
+     * behind "Wi-Fi alone works; add cellular and the picture breaks up",
+     * which no current app HUD can show. `srtrtt=0` means ABR is not running.
      *
-     * `tasks=` — состав периодических задач, работавших в этот момент. Без него
-     * по логу нельзя восстановить, что вообще было включено, и выводы о нагреве
-     * приходится строить на догадках: ровно это и случилось при разборе сессии
-     * 07.09, где не удалось установить даже, была ли включена электронная
-     * стабилизация.
+     * `tasks=` lists periodic tasks running at that moment. Without it, logs
+     * cannot reconstruct what was enabled, leaving thermal conclusions to
+     * guesswork. This happened during analysis of the 07.09 session, where
+     * even whether electronic stabilization was enabled could not be established.
      *
-     * @return счётчики байт для дельты на следующем тике.
+     * @return byte counters for the next tick's delta.
      */
     private fun logStatLine(prevBytes: Map<String, Long>): Map<String, Long> {
         val links = srtlaClient.debugLinks()
@@ -122,9 +119,9 @@ internal class StatsReporter(
                 "therm=${thermalStatus()} | tasks=[${PeriodicTasks.snapshot()}] | $linkText",
         )
         if (recorder.isActive) {
-            // Точки с запятой внутри поля линков: они уезжают в одну колонку
-            // CSV, а вертикальная черта из строки лога сама по себе разделитель
-            // не хуже — лишь бы это была не запятая.
+            // Semicolons inside the links field keep it in one CSV column.
+            // The log line's vertical bar is just as good a separator,
+            // provided it is not a comma.
             recorder.record(
                 phase = phase().toString(),
                 reconnects = reconnects(),

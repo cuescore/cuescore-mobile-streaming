@@ -30,9 +30,9 @@ class SettingsDeepLinkTest {
     fun `encode then decode round-trips profiles`() {
         val settings = sampleSettings()
 
-        // includeSecrets: этот тест про саму конвертацию туда-обратно, а
-        // вычистка ключей проверяется отдельно ниже. Без флага профили серверов
-        // возвращаются урезанными, и сравнение с исходными было бы неверным.
+        // includeSecrets: this tests round-trip conversion itself; key removal
+        // is tested separately below. Without the flag, server profiles return
+        // stripped down and comparison against originals would be invalid.
         val link = SettingsDeepLink.encode(settings, includeSecrets = true)
         assertTrue(link.startsWith("brix://settings?config="))
 
@@ -105,11 +105,11 @@ class SettingsDeepLinkTest {
         assertEquals(1, decoded?.serverProfiles?.size)
     }
 
-    // --- Экспорт ключей вещания ---
+    // --- Stream key export ---
     //
-    // Ссылка уходит в шер-шит, историю браузера и переписку. Кто её получил,
-    // тот может вещать на чужой канал, поэтому по умолчанию ключей в ней быть
-    // не должно ни в одном из трёх мест, где они прячутся.
+    // The link reaches the share sheet, browser history and messages. Recipients
+    // can broadcast to someone else's channel, so by default no keys should
+    // remain in any of the three places where they can hide.
 
     private fun secretSettings() = AppSettings(
         serverProfiles = listOf(

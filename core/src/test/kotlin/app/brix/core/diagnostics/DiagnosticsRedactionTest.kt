@@ -16,13 +16,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Выгрузка диагностики не должна опознавать владельца.
+ * The diagnostics export must not identify the owner.
  *
- * Это не гипотетическая осторожность: до 14.09 здесь пряталось единственное
- * поле `passphrase`, которое заведомо всегда было пустым (задать его из
- * приложения было нельзя). Открытым уезжало всё остальное — ключ трансляции,
- * адрес личного сервера, имена каналов и токен виджета DonationAlerts.
- * Кнопка «Поделиться диагностикой» отдавала ровно то, чего отдавать нельзя.
+ * This isn't hypothetical caution: until Sep 14, the only field hidden here was
+ * `passphrase`, which was known to always be empty (the app provided no way to set
+ * it). Everything else went out in the clear—the stream key, personal server
+ * address, channel names, and DonationAlerts widget token. The "Share diagnostics"
+ * button was sharing exactly what it must not.
  */
 class DiagnosticsRedactionTest {
 
@@ -51,13 +51,13 @@ class DiagnosticsRedactionTest {
         ),
         overlays = listOf(OverlayConfig(id = "o", url = "https://donationalerts.com/widget/SECRETTOKEN")),
         scenes = listOf(Scene(id = "s", name = "SECRETSCENE", imageUri = "/storage/emulated/0/SECRETPATH.png")),
-        // Старое поле для миграции. Именно оно проехало мимо первой версии
-        // вырезания: список `overlays` чистился, а этот дубль — нет.
+        // Legacy migration field. This is what the first redaction missed: the
+        // `overlays` list was scrubbed, but this duplicate was not.
         overlayUrl = "https://www.donationalerts.com/widget/alerts?token=SECRETWIDGET",
         kick = KickIntegration(clientId = "SECRETKICKID", clientSecret = "SECRETKICKSECRET", refreshToken = "SECRETKICKREFRESH"),
         twitch = TwitchIntegration(accessToken = "SECRETACCESS", refreshToken = "SECRETREFRESH", userId = "1", login = "SECRETLOGIN"),
-        // Имя гарнитуры бывает именем владельца («Dima's Buds»): и в общем
-        // звуке, и в устаревшем поле профиля (аудит 23.09).
+        // A headset name can be the owner’s name (“Dima’s Buds”), both in
+        // the general audio settings and in the legacy profile field (audit 23.09).
         audio = AudioSettings(micGain = 1.7f, micDeviceName = "SECRETHEADSET"),
         streamProfiles = listOf(
             @Suppress("DEPRECATION")
@@ -88,13 +88,13 @@ class DiagnosticsRedactionTest {
     @Test
     fun `настройки, влияющие на поведение, остаются`() {
         val json = Diagnostics.redactedJson(settings())
-        // Вырезание не должно превратиться в «на всякий случай уберём всё»:
-        // отчёт без настроек бесполезен. Тип сервера и его числа — это то,
-        // с чего начинается разбор любой жалобы на транспорт.
+        // Redaction must not become "remove everything just in case": a report
+        // without settings is useless. The server type and its numeric values are
+        // where investigation of any transport complaint begins.
         assertTrue("тип сервера", json.contains("SRTLA"))
         assertTrue("тип сервера", json.contains("RTMP"))
-        // Нестандартные значения намеренно: kotlinx не пишет поля, равные
-        // умолчанию, и проверка на дефолт прошла бы вхолостую.
+        // Non-default values are intentional: kotlinx omits fields equal to their
+        // defaults, so checking a default value would be a no-op.
         assertTrue("задержка", json.contains("4321"))
         assertTrue("принудительный IPv4", json.contains("preferIpv4"))
     }

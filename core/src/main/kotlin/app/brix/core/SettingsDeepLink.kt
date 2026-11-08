@@ -18,11 +18,11 @@ import java.net.URLEncoder
  *  whole [AppSettings] (no per-device appearance settings) — this is meant for
  *  moving *stream setup*, not the whole app state.
  *
- *  Здесь раньше стоял комментарий, обещавший, что пароли чужих серверов не
- *  импортируются молча. Он описывал импорт, а дыра была в ЭКСПОРТЕ: в ссылку
- *  уходил весь [ServerProfile] целиком, вместе с ключами вещания владельца.
- *  Теперь секреты вычищаются в [SettingsDeepLink.encode], если их не попросили
- *  явно. */
+ *  The previous comment promised that passwords for other people's servers
+ *  wouldn't be silently imported. It described import, but the leak was in
+ *  EXPORT: the link contained the entire [ServerProfile], including the owner's
+ *  stream keys. Now [SettingsDeepLink.encode] strips secrets unless explicitly
+ *  asked to include them. */
 @Serializable
 data class SharedConfig(
     val streamProfiles: List<StreamProfile> = emptyList(),
@@ -48,18 +48,17 @@ data class SharedConfig(
  * `android.net.Uri` from what [encode] returns to hand to a share sheet).
  */
 /**
- * Убирает из профиля всё, чем можно вещать от имени владельца.
+ * Removes everything from the profile that could let someone stream as the owner.
  *
- * Ключ прячется в двух местах, и упустить любое — значит не сделать
- * ничего: `streamId` (у SRTLA туда уходит `?srtauth=<ключ>`) и сам
- * `baseUrl` — у RTMP ключ трансляции лежит прямо в пути
- * (`rtmp://host/live/<ключ>`).
+ * The key is hidden in two places, and missing either means missing both:
+ * `streamId` (SRTLA puts `?srtauth=<key>` there) and `baseUrl` itself (RTMP
+ * stores the stream key directly in the path: `rtmp://host/live/<key>`).
  *
- * Из `baseUrl` срезаем строку запроса целиком и последний сегмент пути,
- * если сегментов больше одного. Это эвристика, и она намеренно грубая:
- * лучше отдать получателю адрес, который придётся дописать руками, чем
- * тихо разослать ключ. Ради этого же остаётся имя, тип и порт — переносится
- * настройка, а не доступ.
+ * We strip the entire query string from `baseUrl` and the last path segment if
+ * there is more than one. This heuristic is intentionally crude: better to give
+ * the recipient an address they'll have to finish manually than silently share
+ * the key. That's also why the name, type, and port remain—the configuration is
+ * transferred, not access.
  */
 fun ServerProfile.withoutSecrets(): ServerProfile = copy(
     streamId = "",
@@ -88,14 +87,14 @@ object SettingsDeepLink {
     /**
      * Builds a full `brix://settings?config=...` URI string.
      *
-     * @param includeSecrets класть ли в ссылку ключи вещания. По умолчанию НЕТ:
-     *  ссылка уходит в шер-шит, историю браузера и переписку, а кто её получил,
-     *  тот может вещать на ваш канал. Включать осознанно и только когда
-     *  переносишь настройки на своё же второе устройство.
+     * @param includeSecrets whether to include stream keys in the link. NO by default:
+     *  the link goes into the share sheet, browser history, and messages, and whoever
+     *  receives it can stream to your channel. Enable this knowingly, and only when
+     *  moving settings to another device of your own.
      */
     fun encode(settings: AppSettings, includeSecrets: Boolean = false): String {
-        // Без устаревшего звука профиля: в нём имя гарнитуры, а на другом
-        // телефоне он бы ещё и перебил общий звук при миграции.
+        // Exclude deprecated profile audio: it contains the headset name, and on
+        // another phone it would also override the shared audio settings during migration.
         @Suppress("DEPRECATION")
         val profiles = settings.streamProfiles.map { it.copy(audio = AudioSettings()) }
         val shared = SharedConfig(
@@ -119,9 +118,9 @@ object SettingsDeepLink {
         if (!uri.startsWith("$SCHEME://")) return null
         val payload = queryParam(uri, PARAM) ?: return null
         return try {
-            // Ссылка от старой версии может нести звук в профиле. Импорт его
-            // отбрасывает: иначе при следующей загрузке миграция молча
-            // подставила бы чужой звук в общие настройки (аудит 23.09).
+            // A link from an older version may carry audio in the profile. Import
+            // discards it; otherwise, on the next load, migration would silently
+            // put someone else's audio settings into the shared settings (Sep 23 audit).
             @Suppress("DEPRECATION")
             json.decodeFromString<SharedConfig>(payload).let { c ->
                 c.copy(streamProfiles = c.streamProfiles.map { it.copy(audio = AudioSettings()) })
@@ -152,10 +151,10 @@ object SettingsDeepLink {
                 val stream = entry as? JsonObject ?: continue
                 val name = stream["name"]?.jsonPrimitive?.content ?: continue
                 val url = stream["url"]?.jsonPrimitive?.content ?: continue
-                // Обе схемы дают один тип: SRT(LA) — это один транспорт с двумя
-                // режимами, и выбирает режим схема адреса, а не тип профиля.
-                // `srtla://` — бондинг с групповой регистрацией, `srt://` —
-                // обычный приёмник без неё.
+                // Both schemes map to one type: SRT(LA) is one transport with two
+                // modes, selected by the address scheme rather than the profile type.
+                // `srtla://` is bonding with group registration; `srt://` is a regular
+                // receiver without it.
                 val type = if (url.startsWith("srt://") || url.startsWith("srtla://")) {
                     ServerType.SRTLA
                 } else {
@@ -190,23 +189,24 @@ object SettingsDeepLink {
         }
     }
 
-    /** Любая понятная нам ссылка: своя, Moblin или Larix (её же отдаёт IRL Pro). */
+    /** Any link we understand: ours, Moblin, or Larix (also used by IRL Pro). */
     fun decodeAny(uri: String): SharedConfig? =
         decode(uri) ?: decodeMoblin(uri) ?: decodeLarix(uri)
 
     /**
-     * Импорт ссылки Larix Grove — `larix://set/v1?conn[][url]=…&enc[vid][res]=…`.
+     * Import a Larix Grove link — `larix://set/v1?conn[][url]=…&enc[vid][res]=…`.
      *
-     * Этим форматом отдаёт настройки не только Larix, но и IRL Pro (владелец,
-     * 16.09), поэтому его стоит понимать. Формат открытый:
-     * https://softvelum.com/larix/grove/ — соединения массивом `conn[]`,
-     * кодер одним блоком `enc[vid]`/`enc[aud]`, битрейты в кбит/с.
+     * Both Larix and IRL Pro use this format to share settings (owner report,
+     * Sep 16), so it's worth supporting. The format is public:
+     * https://softvelum.com/larix/grove/ — connections are an array `conn[]`,
+     * encoder settings are in `enc[vid]`/`enc[aud]` blocks, and bitrates are in kbps.
      *
-     * Как и у Moblin — в одну сторону и с потерями. Берём только то, чему есть
-     * пара у нас: адрес, имя, `srtstreamid`, `srtlatency`, кодер. Пропускаем
-     * RTMP-логин (`user`/`pass`) и пароль SRT (`srtpass`) — шифрования SRT у нас
-     * нет сознательно (см. TODO), а RTMP-логина нет в модели. Соединения с
-     * непонятной нам схемой (RIST, WebRTC) тоже пропускаются, а не ломают импорт.
+     * Like Moblin, this is one-way and lossy. We take only fields we have an
+     * equivalent for: address, name, `srtstreamid`, `srtlatency`, and encoder.
+     * We skip the RTMP login (`user`/`pass`) and SRT password (`srtpass`)—we
+     * deliberately don't support SRT encryption (see TODO), and RTMP login isn't
+     * in our model. Connections with schemes we don't recognize (RIST, WebRTC) are
+     * skipped too, rather than breaking the import.
      */
     fun decodeLarix(uri: String): SharedConfig? {
         if (!uri.startsWith("larix://")) return null
@@ -218,14 +218,14 @@ object SettingsDeepLink {
             for (pair in query.split('&')) {
                 val idx = pair.indexOf('=')
                 if (idx < 0) continue
-                // Скобки в ключе бывают и как есть, и закодированными (%5B%5D).
+                // Brackets in the key can be literal or URL-encoded (%5B%5D).
                 val key = URLDecoder.decode(pair.substring(0, idx), "UTF-8")
                 val value = URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
                 when {
                     key.startsWith("conn[][") -> {
                         val field = key.removePrefix("conn[][").removeSuffix("]")
-                        // `conn[]` — массив без индексов: новое соединение
-                        // начинается, когда поле в текущем уже встречалось.
+                        // `conn[]` is an unindexed array: a new connection starts
+                        // when the field has already appeared in the current one.
                         val current = connections.lastOrNull()
                         if (current == null || field in current) {
                             connections += mutableMapOf(field to value)

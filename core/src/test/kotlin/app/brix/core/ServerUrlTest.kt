@@ -11,9 +11,9 @@ class ServerUrlTest {
         assertTrue(looksLikeServerUrl("srtla://example.com:5000"))
         assertTrue(looksLikeServerUrl("rtmp://live.twitch.tv/app"))
         assertTrue(looksLikeServerUrl("https://whip.example.com/whip/endpoint?token=abc"))
-        // java.net.URI отдаёт host = null для имён с подчёркиванием
+        // java.net.URI returns host = null for names containing underscores
         assertTrue(looksLikeServerUrl("srtla://belabox_home.local:5000"))
-        // и бросает исключение на | и пробелах в streamid
+        // and throws for | and spaces in streamid
         assertTrue(looksLikeServerUrl("srt://1.2.3.4:8890?streamid=publish:live|key one"))
         assertTrue(looksLikeServerUrl("srt://[2001:db8::1]:8890"))
         assertTrue(looksLikeServerUrl("rtmp://user:pass@host/app"))

@@ -4,9 +4,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <!-- Захват экрана как источник сцены. Тип добавляется службе только ПОСЛЕ
-         согласия пользователя: на Android 14+ запуск службы с типом
-         mediaProjection без выданного разрешения запрещён. -->
+    <!-- Screen capture as a scene source. Add the type to the service only AFTER
+         user consent: on Android 14+, starting a service with type
+         mediaProjection without granted permission is forbidden. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- Lint checks FGS-type permissions per module; app module declares these too (merged). -->
     <uses-permission android:name="android.permission.CAMERA" />

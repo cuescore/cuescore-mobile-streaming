@@ -11,22 +11,21 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Локальная запись эфира в MP4 параллельно вещанию.
+ * Local MP4 recording alongside broadcasting.
  *
- * Тумблер «Запись эфира» жил в настройках с самого начала, сохранялся на диск и
- * **не делал ничего** — за ним не стояло ни строчки кода. Это худший вид
- * дефекта из найденных сравнением с Moblin: интерфейс обещал страховку от
- * обрыва, а её не было, и узнать об этом можно было только не найдя файла.
+ * Record stream existed in settings from the beginning, persisted to disk and
+ * **did nothing**: not a line of implementation. The worst kind of defect found
+ * by comparing with Moblin: the UI promised protection against interruptions,
+ * absent in reality, discovered only when users could not find the file.
  *
- * Запись идёт тем же энкодером, что и эфир: отдельного прохода кодирования нет,
- * дописывается только мультиплексирование в файл. Поэтому цена по процессору
- * мала, а вот место на диске расходуется всерьёз — при 4 Мбит/с это около
- * 30 МБ в минуту.
+ * Recording uses the streaming encoder without a separate encoding pass,
+ * adding only file multiplexing. CPU cost is small, but disk use is
+ * substantial: about 30 MB/minute at 4 Mbps.
  *
- * Пишем в каталог самого приложения (`Android/data/<пакет>/files/Movies`):
- * разрешений он не требует ни на одной версии Android и переживает Scoped
- * Storage без единой оговорки. Плата за это — файлы удаляются вместе с
- * приложением, поэтому путь пишется в лог при каждом старте.
+ * Write to the app's directory (`Android/data/<package>/files/Movies`):
+ * no permission is needed on any Android version, including Scoped Storage.
+ * The tradeoff is that uninstalling the app deletes files, so log the path
+ * on every start.
  */
 internal class StreamRecorder(
     private val appContext: Context,
@@ -34,7 +33,7 @@ internal class StreamRecorder(
 ) {
     private val tag = "BrixStream"
 
-    /** Настройка пользователя. Смена во время эфира вступит в силу со следующего. */
+    /** User setting. Changes mid-stream take effect on the next stream. */
     @Volatile
     var enabled = false
 
@@ -47,13 +46,13 @@ internal class StreamRecorder(
         }
 
         override fun onError(e: Exception?) {
-            // Не роняем эфир из-за записи: вещание важнее файла.
+            // Do not interrupt streaming for recording: broadcasting matters more than the file.
             Log.e(tag, "запись сорвалась, эфир продолжается", e)
             currentFile = null
         }
     }
 
-    /** Начать запись, если она включена. Эфир при отказе не прерывается. */
+    /** Start recording if enabled. Failure does not interrupt broadcasting. */
     fun start() {
         if (!enabled || stream.isRecording) return
         val dir = appContext.getExternalFilesDir(Environment.DIRECTORY_MOVIES)

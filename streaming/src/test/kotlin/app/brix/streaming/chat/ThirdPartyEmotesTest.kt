@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Ответы сокращены из настоящих (7tv.io, api.betterttv.net, 16.09). */
+/** Responses are shortened versions of real ones (7tv.io, api.betterttv.net, Sep 16). */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ThirdPartyEmotesTest {
 
@@ -43,7 +43,7 @@ class ThirdPartyEmotesTest {
                 url.endsWith("/users/kick/676") && url.contains("7tv") -> seventvUser
                 url.contains("emote-sets/global") -> """{"emotes":[]}"""
                 url.contains("emotes/global") -> "[]"
-                else -> "" // BTTV: канала нет
+                else -> "" // BTTV: no such channel
             }
         }
         val scope = TestScope(StandardTestDispatcher(testScheduler))
@@ -52,6 +52,6 @@ class ThirdPartyEmotesTest {
         scope.advanceUntilIdle()
         assertEquals(setOf("GAMBA"), emotes.emotes.value.keys)
         assert(asked.contains("https://7tv.io/v3/users/kick/676"))
-        assertEquals(4, asked.size) // без повторов: 404 — не сбой
+        assertEquals(4, asked.size) // No retries: 404 is not a failure
     }
 }

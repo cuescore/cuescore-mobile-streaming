@@ -350,8 +350,8 @@
     <string name="onboarding_cuescore_verified">Verified player: %1$s</string>
     <string name="onboarding_cuescore_not_found">No CueScore player profile was found for that ID.</string>
     <string name="onboarding_cuescore_lookup_failed">Could not check the profile. Check your connection and try again.</string>
-    <!-- Язык, на котором написан ЭТОТ файл. По нему экран выбора языка
-         отличает наш перевод от системных языков Android. -->
+    <!-- Language this file is written in. The language selection screen uses it
+         to distinguish our translation from Android system languages. -->
     <string name="locale_tag" translatable="false">en</string>
     <string name="onboarding_welcome_title">Hi there!</string>
     <string name="onboarding_welcome_p1">Welcome to CueScore streaming — an app for streaming billiard matches.</string>

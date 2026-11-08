@@ -5,9 +5,9 @@ plugins {
 
 android {
 
-    // android.util.Log зовётся из SettingsStore.load() на пути восстановления
-    // из .bak — без этого юнит-тест именно этого пути падал бы на «not mocked».
-    // Тот же флаг стоит в :streaming.
+    // SettingsStore.load() calls android.util.Log when restoring from .bak;
+    // without this, that path's unit test would fail with "not mocked".
+    // :streaming uses the same flag.
     testOptions {
         unitTests.isReturnDefaultValues = true
     }

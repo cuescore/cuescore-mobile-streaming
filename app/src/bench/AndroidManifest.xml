@@ -3,11 +3,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <application>
-        <!-- Копия app/src/debug/AndroidManifest.xml: стенд шлёт команды эфира
-             (START/STOP/RECONNECT/MUTE) прямо службе, а снаружи она открыта
-             только в отладочных сборках. Список типов держать в согласии с
-             streaming/src/main/AndroidManifest.xml — tools:node="replace"
-             заменяет объявление целиком (см. комментарий в debug). -->
+        <!-- Copy of app/src/debug/AndroidManifest.xml: the bench sends live-stream
+             commands (START/STOP/RECONNECT/MUTE) directly to the service, which is
+             exposed externally only in debug builds. Keep the type list in sync with
+             streaming/src/main/AndroidManifest.xml — tools:node="replace" replaces
+             the entire declaration (see the comment in debug). -->
         <service
             android:name="app.brix.streaming.StreamService"
             android:exported="true"

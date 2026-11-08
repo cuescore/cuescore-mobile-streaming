@@ -36,10 +36,10 @@ object StreamController {
             ServerType.RTMP -> Streamer(context.applicationContext)
             ServerType.WHIP -> WhipStreamer(context.applicationContext)
         }
-        // Перечислить входы разово, при создании ЛЮБОГО стримера: чем именно
-        // телефон готов делиться по микрофонам, из документации не узнать,
-        // только с устройства. Раньше этот вызов стоял в SrtlaStreamer и не
-        // срабатывал вовсе, когда активен профиль RTMP.
+        // Enumerate inputs once on creation of ANY streamer: microphone
+        // availability can be learned only from the device, not documentation.
+        // Previously this call lived in SrtlaStreamer and never ran with
+        // an active RTMP profile.
         MicDevices.logInputs(context.applicationContext)
         streamer = created
         kind = type

@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class OverlayAudioSource(
     private val mic: MicrophoneSource = MicrophoneSource(),
     private val chunkBytes: Int = 4_096,
-    /** Считает уровень того, что уходит в энкодер, для индикатора в HUD. */
+    /** Measures the level sent to the encoder for the HUD indicator. */
     private val meter: app.brix.streaming.MicLevelMeter? = null,
 ) : AudioSource(), GetMicrophoneData {
 
@@ -78,8 +78,8 @@ class OverlayAudioSource(
         mic.stop()
         out = null
         mixing = false
-        // Иначе полоски в HUD застывают на последнем значении и выглядят как
-        // работающий микрофон на остановленном эфире.
+        // Otherwise the HUD bars freeze at their last value and look like a
+        // working microphone on a stopped stream.
         meter?.reset()
     }
 
@@ -87,21 +87,21 @@ class OverlayAudioSource(
      *  be installed — so the wrapper forwards it to the mic it owns. Without
      *  this, arming overlay audio silently un-muted a muted mic (the cast in
      *  SrtlaStream.setMicMuted only matched a bare MicrophoneSource). */
-    /** Усиление того же микрофона, что и без микшера: иначе включение звука
-     *  донатов молча сбрасывало бы настройку уровня. */
-    /** Внутренний микрофон микшера — чтобы выбор устройства действовал и при
-     *  включённом звуке донатов, а не только без него. */
+    /** Gain for the same microphone as without the mixer: otherwise enabling donation
+     *  audio would silently reset the level setting. */
+    /** The mixer’s internal microphone, so device selection also applies when
+     *  donation audio is enabled, not only when it is off. */
     fun micSourceForPreference(): MicrophoneSource = mic
 
     fun setMicGain(gain: Float) {
         mic.microphoneVolume = gain
     }
 
-    /** Глушим сами, после замера, а не через [MicrophoneSource.mute]: библиотека
-     *  отдаёт при мьюте нули прямо из микрофона, и индикатор видел тишину — мьют
-     *  было не отличить от молчания. Теперь, как в IRL Pro (владелец, 26.10),
-     *  полоски при мьюте продолжают показывать голос, только серым, а в эфир
-     *  уходят нули. `unMute()` — на случай, если микрофон заглушили в обход. */
+    /** We mute after metering, not via [MicrophoneSource.mute]: the library
+     *  returns zeros directly from the microphone when muted, so the indicator saw
+     *  silence and mute was indistinguishable from silence. Now, as in IRL Pro (the
+     *  owner, 26.10), the bars continue to show the voice in gray while muted, and
+     *  zeros go to the stream. `unMute()` handles cases where the mic was muted elsewhere. */
     @Volatile
     private var micMuted = false
 
@@ -112,7 +112,7 @@ class OverlayAudioSource(
 
     fun isMicMuted(): Boolean = micMuted
 
-    /** Тестам: приёмник кадров без запуска настоящего микрофона. */
+    /** For tests: receive frames without starting a real microphone. */
     internal fun attachSinkForTest(sink: GetMicrophoneData) {
         out = sink
     }
@@ -126,8 +126,8 @@ class OverlayAudioSource(
 
     override fun inputPCMData(frame: Frame) {
         val sink = out ?: return
-        // Меряем ДО мьюта и ДО микширования: индикатор показывает голос, а не
-        // донат, и при мьюте тоже — серым.
+        // Meter BEFORE muting and BEFORE mixing: the indicator shows the voice, not
+        // the donation, and still shows it in gray when muted.
         meter?.submit(frame.buffer, frame.offset, frame.size)
         val voice = if (micMuted) Frame(ByteArray(frame.size), 0, frame.size, frame.timeStamp) else frame
         deliver(sink, voice)
@@ -165,11 +165,11 @@ class OverlayAudioSource(
         return out
     }
 
-    /** Метка времени — от кадра микрофона, а не текущие часы: пока играл
-     *  донат, звук получал метки по времени обработки, а после алерта они
-     *  прыгали обратно на время захвата — рассинхрон, который 2.8.1 как раз
-     *  чинил в самой библиотеке. И берём ровно [Frame.size] байт от
-     *  [Frame.offset], а не весь буфер. */
+    /** Timestamp comes from the microphone frame, not the current clock: while the
+     *  donation played, audio was timestamped at processing time, then jumped back
+     *  to capture time after the alert — an out-of-sync issue that 2.8.1 had just
+     *  fixed in the library. Also take exactly [Frame.size] bytes starting at
+     *  [Frame.offset], not the whole buffer. */
     private fun mix(frame: Frame, donation: ByteArray, volume: Float): Frame {
         val micBytes = if (frame.offset == 0 && frame.size == frame.buffer.size) {
             frame.buffer

@@ -53,18 +53,18 @@ import app.brix.core.defaultStreamPresets
 import app.brix.streaming.EncoderCapabilities
 import app.brix.streaming.VideoMode
 
-/** Длинный адрес и ключ не выигрывают от ширины альбомного экрана: строка
- *  растягивается на 800 dp, и опечатку в середине URL глазом не поймать.
- *  Ограничиваем сами поля, а не колонку — списки и отчёты ширина нужна вся
- *  (владелец, 20.09). */
-// Порядок важен: widthIn сначала, fillMaxWidth потом. В обратном порядке
-// fillMaxWidth фиксирует ширину родителя, и widthIn сузить её уже не может.
+/** Long addresses and keys do not benefit from a landscape screen's width: the line
+ *  stretches to 800 dp, making a typo in the middle of a URL hard to spot.
+ *  Constrain the fields themselves, not the column—the lists and reports need the full width
+ *  (the owner, 20.09). */
+// Order matters: widthIn first, then fillMaxWidth. In the reverse order,
+// fillMaxWidth fixes the parent's width, and widthIn can no longer make it narrower.
 private val LongFieldWidth = Modifier.widthIn(max = 480.dp).fillMaxWidth()
 
-/** Числовые поля настроек открывают цифровую клавиатуру: буквам в ширине,
- *  fps и битрейте делать нечего, а переключать раскладку на ходу — лишнее
- *  движение (аудит 20.09). Ввод дополнительно отфильтрован по цифрам:
- *  клавиатуру можно сменить руками, да и вставка из буфера мимо неё. */
+/** Numeric settings fields open the numeric keyboard: letters have no place in width,
+ *  fps, or bitrate, and switching layouts on the fly is an unnecessary
+ *  step (audit 20.09). Input is additionally filtered to digits:
+ *  the keyboard can be changed manually, and pasting bypasses it anyway. */
 private val numberKeyboard = KeyboardOptions(keyboardType = KeyboardType.Number)
 
 @Composable
@@ -90,17 +90,17 @@ fun StreamProfileEditScreen(
     var abrAlgorithm by rememberSaveable { mutableStateOf(profile?.adaptiveBitrate?.algorithm ?: AbrAlgorithm.BELABOX) }
     var keyframe by rememberSaveable { mutableStateOf((profile?.video?.keyframeIntervalSec ?: 2).toString()) }
 
-    // Стёртое поле раньше просто оставляло прежнее значение, и человек уходил
-    // с экрана уверенный, что поменял разрешение (аудит 20.09).
+    // An erased field used to simply leave the previous value unchanged, so the user left
+    // the screen confident they had changed the resolution (audit 20.09).
     val numbersOk = app.brix.core.videoFieldsValid(width, height, fps, bitrate)
 
     val base = profile ?: newStreamProfile(name)
     val draft = base.copy(
         name = name.ifBlank { "Unnamed" },
-        // Пустое или кривое поле оставляет ПРЕЖНЕЕ значение профиля, а не
-        // подставляет захардкоженную константу. Раньше стёртая ширина у профиля
-        // 1080p молча превращалась в 1280: человек правил одно поле, а уезжало
-        // соседнее, и заметить это можно было только по картинке в эфире.
+        // An empty or invalid field leaves the profile's PREVIOUS value, rather than
+        // inserting a hard-coded constant. Previously, erasing the width of a
+        // 1080p profile silently changed it to 1280: the user edited one field, but its
+        // neighbor changed, and this could only be noticed in the live stream's picture.
         video = base.video.copy(
             codec = codec,
             width = width.toIntOrNull() ?: base.video.width,
@@ -192,8 +192,8 @@ fun StreamProfileEditScreen(
                                 height = preset.height.toString()
                                 fps = preset.fps.toString()
                                 bitrate = preset.videoBitrateKbps.toString()
-                                // Звук с 03.09 общий, а не в профиле: пресет
-                                // пишет его битрейт в общие настройки.
+                                // Audio has been global since 03.09, not part of the profile: the preset
+                                // writes its bitrate to the global settings.
                                 viewModel.updateAudio(
                                     settings.audio.copy(bitrateKbps = preset.audioBitrateKbps),
                                 )
@@ -316,10 +316,10 @@ fun StreamProfileEditScreen(
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 }
-                // Правду про режим битрейта больше нигде не видно: RootEncoder
-                // просит CBR, при отказе молча берёт VBR и пишет об этом только
-                // в системный лог. Выбрать режим нельзя — сеттера у энкодера
-                // нет, — поэтому здесь только честное сообщение.
+                // There is no other way to see the truth about the bitrate mode: RootEncoder
+                // requests CBR, silently falls back to VBR if refused, and only logs this
+                // to the system log. The mode cannot be selected—there is no setter on the encoder—
+                // so this is just an honest message.
                 Spacer(Modifier.height(4.dp))
                 val cbr = remember(codec) { EncoderCapabilities.isCbrSupported(codec) }
                 Text(
@@ -335,7 +335,7 @@ fun StreamProfileEditScreen(
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
                 Spacer(Modifier.height(12.dp))
-                // Поле было в модели с самого начала и не читалось нигде.
+                // The field had been in the model from the start and was never read anywhere.
                 OutlinedTextField(
                     value = keyframe,
                     onValueChange = { keyframe = it.filter(Char::isDigit) },
@@ -346,9 +346,9 @@ fun StreamProfileEditScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            // Геометрия картинки и алгоритм адаптивного битрейта — разные
-            // разговоры: в одной карте человек, менявший fps, каждый раз
-            // проезжал глазами весь ABR (аудит 20.09).
+            // Image geometry and the adaptive bitrate algorithm are separate
+            // concerns: on one screen, someone changing fps had to scroll past the entire ABR
+            // every time (audit 20.09).
             SettingsSectionHeader(stringResource(R.string.group_abr))
             BrixCard {
                 BrixToggleRow(
@@ -385,9 +385,9 @@ fun StreamProfileEditScreen(
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    // Алгоритм жил в модели и доходил до регулятора
-                    // (SrtlaStream -> AdaptiveBitrate.setAlgorithm), но выбрать
-                    // его было негде — ровно как с задержкой SRT.
+                    // The algorithm was in the model and reached the controller
+                    // (SrtlaStream -> AdaptiveBitrate.setAlgorithm), but there was nowhere to select it—
+                    // just like the SRT latency.
                     BrixSegmentRow(
                         title = stringResource(R.string.field_abr_algorithm),
                         options = listOf(
@@ -422,13 +422,13 @@ fun ServerProfileEditScreen(
     var enabled by rememberSaveable { mutableStateOf(server?.enabled ?: true) }
     var latency by rememberSaveable { mutableStateOf((server?.latencyMs ?: 2000).toString()) }
     var preferIpv4 by rememberSaveable { mutableStateOf(server?.preferIpv4 ?: false) }
-    // Удаление сервера необратимо и стоит рядом с кнопкой сохранения: спрашиваем,
-    // как это уже делает список серверов.
+    // Deleting a server is irreversible and the button is next to Save: ask for confirmation,
+    // as the server list already does.
     var confirmDelete by remember { mutableStateOf(false) }
 
-    // Пустой или бессхемный адрес сохранялся молча, и человек узнавал об этом
-    // при выходе в эфир. Кнопка «Сохранить» теперь гаснет, а под полем видно,
-    // чего не хватает (аудит 20.09).
+    // An empty or schemeless address was silently saved, and the user only found out
+    // when going live. The Save button is now disabled, and the field shows
+    // what is missing (audit 20.09).
     val urlOk = remember(baseUrl) { app.brix.core.looksLikeServerUrl(baseUrl) }
 
     val base = server ?: ServerProfile(
@@ -442,13 +442,13 @@ fun ServerProfileEditScreen(
         baseUrl = baseUrl,
         type = type,
         enabled = enabled,
-        // Пустое или кривое поле оставляет прежнее значение, а не константу —
-        // как и в редакторе стрим-профилей.
+        // An empty or invalid field leaves the previous value rather than a constant—
+        // as in the stream profile editor.
         latencyMs = latency.toIntOrNull() ?: base.latencyMs,
         preferIpv4 = preferIpv4,
-        // Ключ хранится отдельно от адреса и приклеивается при подключении
-        // (ServerProfile.connectUrl). Для не-RTMP поле не показывается, но
-        // значение не стираем: смена типа туда-сюда не должна его терять.
+        // The key is stored separately from the address and appended when connecting
+        // (ServerProfile.connectUrl). For non-RTMP, the field is hidden, but
+        // we do not erase the value: switching types back and forth must not lose it.
         streamId = streamKey.trim(),
     )
 
@@ -501,8 +501,8 @@ fun ServerProfileEditScreen(
                     onValueChange = { baseUrl = it },
                     label = { Text(stringResource(R.string.field_url)) },
                     isError = baseUrl.isNotBlank() && !urlOk,
-                    // Схема адреса выбирает режим, а не отдельный тип сервера:
-                    // так же устроено в Moblin, откуда приходит часть людей.
+                    // The address scheme selects the mode, not a separate server type:
+                    // Moblin works the same way, and some users come from there.
                     supportingText = when {
                         baseUrl.isNotBlank() && !urlOk -> {
                             {
@@ -515,8 +515,8 @@ fun ServerProfileEditScreen(
                         type == ServerType.SRTLA -> {
                             { Text(stringResource(R.string.field_url_hint_srtla)) }
                         }
-                        // http:// для WHIP разрешён (владелец, 04.10), но человек
-                        // должен знать, что токен идёт открыто.
+                        // http:// is allowed for WHIP (the owner, 04.10), but the user
+                        // should know that the token is sent in the clear.
                         type == ServerType.WHIP && baseUrl.trim().startsWith("http://", ignoreCase = true) -> {
                             {
                                 Text(
@@ -530,10 +530,10 @@ fun ServerProfileEditScreen(
                     singleLine = true,
                     modifier = LongFieldWidth,
                 )
-                // И у RTMP, и у SRTLA секрет доступа к каналу лежит в адресе:
-                // у первого последним сегментом пути, у второго внутри
-                // параметра streamid вместе с srtauth. Поле одно, подпись
-                // разная — площадки называют это по-разному.
+                // For both RTMP and SRTLA, the channel access secret is in the address:
+                // for the former, in the last path segment; for the latter, inside
+                // streamid along with srtauth. There is one field, but the label
+                // differs because platforms use different names for it.
                 if (type != ServerType.WHIP) {
                     val isRtmp = type == ServerType.RTMP
                     Spacer(Modifier.height(12.dp))
@@ -554,8 +554,8 @@ fun ServerProfileEditScreen(
                                 ),
                             )
                         },
-                        // Точки по умолчанию: ключ трансляции — это доступ к
-                        // каналу, а настройки стример открывает и в эфире тоже.
+                        // Default bullets: the stream key grants access to the
+                        // channel, and streamers also open settings while live.
                         visualTransformation = if (keyVisible) {
                             VisualTransformation.None
                         } else {
@@ -590,11 +590,11 @@ fun ServerProfileEditScreen(
                         keyboardOptions = numberKeyboard,
                         label = { Text(stringResource(R.string.field_srt_latency)) },
                         supportingText = {
-                            // Moblin предупреждает ровно так же при значении ниже
-                            // 1000 для своей реализации SRT. У нас реализация тоже
-                            // своя, и смысл тот же: при короткой задержке окно на
-                            // переотправку потерянного пакета почти нулевое, то
-                            // есть SRT перестаёт делать то, ради чего его берут.
+                            // Moblin issues the same warning for values below
+                            // 1000 in its SRT implementation. Our implementation is also
+                            // custom, and the same principle applies: with low latency, the window for
+                            // retransmitting a lost packet is nearly zero, meaning
+                            // SRT stops doing what people use it for.
                             val low = latency.toIntOrNull()?.let { it < 1000 } ?: false
                             Text(
                                 text = stringResource(
@@ -611,15 +611,15 @@ fun ServerProfileEditScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                // Тумблера «Включено» здесь больше нет: активный сервер один и
-                // выбирается радиокнопкой в списке. Иначе через редактор можно
-                // было включить второй и вернуть ту самую путаницу, где вещает
-                // первый по порядку, а галочки стоят у двоих.
+                // There is no longer an Enabled toggle here: there is only one active server, and it is
+                // selected with a radio button in the list. Otherwise, the editor could
+                // enable a second one and bring back the same confusion where the first server in the list
+                // broadcasts while two servers are checked.
             }
             if (profileId != null) {
-                // Красная, как подтверждение в диалоге: раньше кнопка удаления
-                // выглядела ровно как «Сохранить» на соседних экранах, и в
-                // спешке разницу давало только расположение.
+                // Red, like the confirmation in the dialog: the delete button used to
+                // look exactly like Save on neighboring screens, and in
+                // a hurry, only the position distinguished them.
                 Button(
                     shape = BrixButtonShape,
                     onClick = { confirmDelete = true },

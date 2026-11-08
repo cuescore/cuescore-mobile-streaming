@@ -5,7 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /** Shapes below match the official schema examples at
- *  dev.live.vkvideo.ru/docs/method/chat ("Получение сообщений из чата"). */
+ *  dev.live.vkvideo.ru/docs/method/chat ("Retrieving chat messages"). */
 class VkChatParsingTest {
 
     @Test

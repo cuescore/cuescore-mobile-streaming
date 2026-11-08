@@ -1,26 +1,26 @@
 package app.brix.core
 
 /*
- * Логика редакторов профилей, которая жила в Compose-экранах и ViewModel без
- * тестов (разбор 03.10). Отрисовку проверяют глаза на телефоне, а это —
- * обычные правила над данными, им место здесь.
+ * Profile-editor logic that used to live in Compose screens and ViewModels without
+ * tests (review on 03.10). Rendering is checked by eye on a phone; these are
+ * ordinary data rules, and they belong here.
  */
 
 /**
- * Можно ли сохранять видео профиля: ширина, высота, fps и битрейт — целые
- * больше нуля. Стёртое поле раньше молча оставляло прежнее значение, и человек
- * уходил с экрана уверенный, что поменял разрешение (аудит 23.09).
+ * Whether profile video can be saved: width, height, fps, and bitrate must be
+ * positive integers. An erased field used to silently retain its previous value,
+ * so people left the screen thinking they had changed the resolution (23.09 audit).
  */
 fun videoFieldsValid(width: String, height: String, fps: String, bitrateKbps: String): Boolean =
     listOf(width, height, fps, bitrateKbps).all { (it.trim().toIntOrNull() ?: 0) > 0 }
 
 /**
- * Список приоритетов каналов после правки одного из них.
+ * Channel priorities after editing one of them.
  *
- * Недостающие умолчания дописываются ДО правки: на старом профиле с пустым
- * списком правка Wi-Fi давала [WIFI(8), CELLULAR, ETHERNET, WIFI(w)] — экран
- * показывал два Wi-Fi, а стример брал первую запись, старое умолчание, и правка
- * молча терялась (аудит 23.09). Имя сравнивается без учёта регистра.
+ * Missing defaults are appended BEFORE the edit: on an old profile with an empty
+ * list, editing Wi-Fi produced [WIFI(8), CELLULAR, ETHERNET, WIFI(w)] — the screen
+ * showed two Wi-Fi entries, while the streamer used the first, the old default, and
+ * the edit was silently lost (23.09 audit). Names are compared case-insensitively.
  */
 fun List<ConnectionPriority>.withPriority(name: String, enabled: Boolean, weight: Int): List<ConnectionPriority> {
     val list = toMutableList()
@@ -34,14 +34,14 @@ fun List<ConnectionPriority>.withPriority(name: String, enabled: Boolean, weight
 }
 
 /**
- * Серверы после импорта по ссылке `brix://` / `moblin://`: привезённые
- * дописываются к своим.
+ * Servers imported via a `brix://` / `moblin://` link are appended to the existing ones.
  *
- * Активным остаётся ровно один — экран эфира вещает на первый включённый, а
- * список серверов показывает радиокнопки. Раньше привезённые приезжали со
- * своим `enabled`, и после импорта горело несколько кружков, а вещал первый по
- * списку. Если свой активный есть — он и остаётся, привезённые выключены; если
- * нет — активным становится первый привезённый включённый (или просто первый).
+ *
+ * Exactly one remains active — the stream screen broadcasts to the first enabled
+ * server, while the server list shows radio buttons. Previously imported servers
+ * arrived with their `enabled` value, so multiple circles lit up after import while
+ * the first server in the list was used. If an existing server is active, it stays
+ * active and imported ones are disabled; otherwise the first imported enabled server (or simply the first) becomes active.
  */
 fun mergeImportedServers(current: List<ServerProfile>, imported: List<ServerProfile>): List<ServerProfile> {
     val activeId = if (current.any { it.enabled }) {

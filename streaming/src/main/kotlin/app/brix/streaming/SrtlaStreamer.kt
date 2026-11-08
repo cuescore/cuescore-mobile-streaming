@@ -51,9 +51,9 @@ class SrtlaStreamer(
     private val _state = MutableStateFlow(StreamState())
     override val state: StateFlow<StreamState> = _state.asStateFlow()
 
-    // Тик часов эфира — отдельно от состояния, чтобы ежесекундная отметка
-    // времени не перерисовывала весь экран стримера. Публикуется из того же
-    // цикла, что уже крутится, второго таймера не появляется.
+    // Stream clock ticks separately from state so each second does not redraw
+    // the entire streaming screen. Published by the existing loop without
+    // introducing another timer.
     private val _uptimeTick = MutableStateFlow(0L)
     override val uptimeTick: StateFlow<Long> = _uptimeTick.asStateFlow()
 
@@ -69,17 +69,17 @@ class SrtlaStreamer(
     private val networkManager = BondingNetworkManager(appContext)
     private val connections = ConcurrentHashMap<Network, SrtlaConnection>()
 
-    /** Какие сети заводить каналами, какие держать в запасе (обычный SRT —
-     *  один канал, остальные в запасе на случай его пропажи). Логика и её
-     *  тесты — в ChannelRoster. */
+    /** Which networks become links and which remain on standby (plain SRT:
+     *  one link, others held in reserve if it disappears). Logic and tests
+     *  live in ChannelRoster. */
     private val roster = ChannelRoster<Network>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // Moblink (Этап F): relay devices join as extra SRTLA bonding channels,
+    // Moblink (Stage F): relay devices join as extra SRTLA bonding channels,
     // exactly like a wifi/cellular connection — see onRelayTunnelReady below.
     // No changes to SrtlaClient/SrtlaConnection were needed for this: they
     // already support a per-connection host/port via startAddedConnection.
-    // Камера и превью целиком в CameraController.
+    // Camera and preview are entirely managed by CameraController.
     private val camera = CameraController(
         appContext = appContext,
         stream = stream,
@@ -105,8 +105,8 @@ class SrtlaStreamer(
     private var fallbackJob: Job? = null
     private var currentUrl = ""
 
-    /** Решения о переподключении — в отдельном классе, покрытом тестами без
-     *  телефона (SrtlaReconnectControllerTest). Здесь только мост к стримеру. */
+    /** Reconnection decisions live in a separate class tested without a phone
+     *  (SrtlaReconnectControllerTest). This is only the bridge to the streamer. */
     private val reconnects = SrtlaReconnectController(
         session = session,
         host = object : SrtlaReconnectController.Host {
@@ -136,7 +136,7 @@ class SrtlaStreamer(
                         retryable = true,
                     ))
                 }
-                // Не в потоке колбэка транспорта: stopStream ждёт отправителя.
+                // Not on the transport callback thread: stopStream awaits the sender.
                 scope.launch {
                     if (stream.isStreaming) {
                         try { stream.stopStream() } catch (_: Exception) {}
@@ -194,10 +194,10 @@ class SrtlaStreamer(
                 Log.w(tag, "onNetworkAvailable type=$type network=$network isActive=${session.isActive()} conns=${srtlaClient.connectionCount()}")
                 val gen = session.generation
                 val weight = channelWeightFor(type)
-                // Обычный SRT: второй канал не заводим — сам открытый сокет к тому
-                // же серверу ломает сессию (SRT привязан к паре адрес-порт, полевой
-                // прогон 14.09). Такая сеть уходит в запас. Канал с весом 0
-                // выключен в профиле и не заводится вовсе.
+                // Plain SRT: do not create a second link. An open socket to the
+                // same server breaks the address-port-bound session (field run
+                // 14.09). Hold that network on standby. Weight 0 means disabled
+                // in the profile, so no link is created at all.
                 when (
                     roster.onAvailable(
                         network = network,
@@ -233,13 +233,13 @@ class SrtlaStreamer(
                             Log.w(tag, "bindSocket to $type failed (${e.message}); using default route")
                         }
                     },
-                    // Резолвим ЧЕРЕЗ СВОЮ сеть, а не через сеть по умолчанию:
-                    // Network.getAllByName спрашивает резолвер именно этого
-                    // линка. Иначе сотовый шёл бы на адрес, разрешённый по
-                    // Wi-Fi, а без интернета на Wi-Fi не поднялся бы вовсе.
+                    // Resolve THROUGH THIS network, not the default:
+                    // Network.getAllByName queries this link's resolver.
+                    // Otherwise cellular would use a Wi-Fi-resolved address
+                    // or fail entirely when Wi-Fi has no internet.
                     resolve = { host ->
                         runCatching { pickAddress(network.getAllByName(host).toList(), preferIpv4) }
-                            // Без it.message: в нём имя хоста, а тег BrixStream уезжает в диагностику.
+                            // Omit it.message: it contains the hostname; BrixStream appears in diagnostics.
                             .onFailure { Log.w(tag, "DNS через $type не ответил: ${it.javaClass.simpleName}") }
                             .getOrNull()
                     },
@@ -263,7 +263,7 @@ class SrtlaStreamer(
             override fun onNetworkLost(network: Network) {
                 Log.w(tag, "onNetworkLost network=$network removed=${connections[network]?.type}")
                 connections.remove(network)?.let { srtlaClient.removeConnection(it) }
-                // Обычный SRT остался без канала — переезжаем на запасную сеть.
+                // Plain SRT lost its link: move to a standby network.
                 val next = roster.onLost(
                     network = network,
                     plainSrt = !srtlaClient.useSrtla,
@@ -296,7 +296,7 @@ class SrtlaStreamer(
         }
     }
 
-    // Секундная телеметрия (HUD + строка BrixStat) живёт в StatsReporter.
+    // Per-second telemetry (HUD + BrixStat line) lives in StatsReporter.
     private val stats = StatsReporter(
         appContext = appContext,
         srtlaClient = srtlaClient,
@@ -310,12 +310,12 @@ class SrtlaStreamer(
     )
 
     /**
-     * Что за сессию не меняется — в одну строку перед заголовком CSV.
+     * Session-constant information in one line before the CSV header.
      *
-     * Без этого чужой журнал нечем объяснить: вопрос «почему у него девять ватт»
-     * начинается с «а что он кодировал и чем». Имя энкодера спрашиваем у системы,
-     * а не берём из настроек: настройка говорит, чего мы хотели, а MediaCodec —
-     * что реально досталось.
+     * Without this another user's log lacks context: "why is it using nine watts?"
+     * starts with "what was encoded, and with what?". Query the system for the
+     * encoder name, not settings: settings say what we wanted, MediaCodec says
+     * what we actually got.
      */
     private fun sessionNote(): String {
         val video = profile?.video
@@ -351,7 +351,7 @@ class SrtlaStreamer(
         return if (entry != null && entry.enabled) entry.weight else 0
     }
 
-    /** Настройка сервера, а не профиля потока: у неё нет иного места. */
+    /** Server setting, not a stream-profile setting: there is no other place for it. */
     fun setPreferIpv4(enabled: Boolean) {
         preferIpv4 = enabled
     }
@@ -396,7 +396,7 @@ class SrtlaStreamer(
 
     private fun stopMoblink() = moblink.stop()
 
-    /** Брать при разрешении имени только IPv4 (настройка сервера). */
+    /** Resolve names to IPv4 only (server setting). */
     @Volatile
     private var preferIpv4 = false
 
@@ -417,31 +417,30 @@ class SrtlaStreamer(
     @Volatile
     private var appliedBitrateKbps: Int? = null
 
-    /** Кодек, запечённый в энкодер последним prepare(). Битрейт можно менять на
-     *  лету, кодек — нет, поэтому его смена требует пересборки. */
+    /** Codec baked into the encoder by the last prepare(). Bitrate can change
+     *  live, but codec cannot, so changing it requires rebuilding. */
     @Volatile
     private var appliedCodec: Codec? = null
 
-    /** Интервал ключевых кадров, запечённый последним prepare(). Как и кодек,
-     *  на лету не меняется, поэтому его правка тоже требует пересборки —
-     *  иначе настройка молча не применялась бы до перезапуска приложения. */
+    /** Keyframe interval baked in by the last prepare(). Like codec, it cannot
+     *  change live, so edits require rebuilding; otherwise the setting would
+     *  silently remain unapplied until app restart. */
     @Volatile
     private var appliedKeyframeSec: Int? = null
 
     override fun prepare(): Boolean {
-        // Кодек, в отличие от битрейта, на лету не меняется: он запекается в
-        // энкодер при prepare(). Ранний выход по `prepared` означал, что смена
-        // кодека в настройках не применялась вовсе — поле 31.08: профиль
-        // переключён на H.264, а в эфир продолжал идти HEVC
-        // (ExynosC2HevcEncComponent в логах).
+        // Unlike bitrate, codec cannot change live: prepare() bakes it into the
+        // encoder. Returning early for `prepared` prevented codec edits from
+        // applying at all. Field evidence 31.08: profile switched to H.264,
+        // but the stream still used HEVC (ExynosC2HevcEncComponent in logs).
         val wantCodec = profile?.video?.codec ?: VideoSettings().codec
         val wantKeyframe = profile?.video?.keyframeIntervalSec ?: VideoSettings().keyframeIntervalSec
         if (prepared && appliedCodec == wantCodec && appliedKeyframeSec == wantKeyframe) return true
         var restorePreview = false
         if (prepared) {
-            // Пересобирать энкодер можно только на остановленном эфире и только
-            // освободив прежний: иначе prepareVideo падает с «Failed to prepare»
-            // (поле 31.08 — смена кодека при живом превью роняла старт).
+            // Rebuild the encoder only when streaming is stopped and after
+            // releasing the old one; otherwise prepareVideo fails with
+            // "Failed to prepare" (31.08: codec change during live preview broke Start).
             if (stream.isStreaming) {
                 Log.w(tag, "prepare: смена кодека $appliedCodec -> $wantCodec отложена до остановки эфира")
                 return true
@@ -471,28 +470,26 @@ class SrtlaStreamer(
                 height = p.height,
                 bitrate = p.bitrateKbps * 1000,
                 fps = p.fps,
-                // Поле keyframeIntervalSec жило в модели с самого начала и не
-                // читалось НИГДЕ: писалось на диск и не делало ничего. Интервал
-                // ключевых кадров важен для зрителя — от него зависит, как
-                // быстро подхватывается картинка при подключении и после
-                // потери, — поэтому доводим до энкодера, а не выбрасываем.
+                // keyframeIntervalSec existed in the model from the beginning
+                // but was read NOWHERE: persisted without effect. Keyframe
+                // interval determines how quickly viewers get a picture on
+                // joining and after loss, so pass it to the encoder.
                 iFrameInterval = p.keyframeIntervalSec,
-                // Профиль кодирования. По умолчанию RootEncoder передаёт -1 и
-                // не выставляет ключ вовсе, то есть энкодер берёт свой —
-                // обычно самый простой. High/Main дают около 10-15% битрейта
-                // при том же качестве за счёт CABAC, а мы бьём в фиксированный
-                // битрейт, значит выигрыш достаётся картинкой.
-                // Спрашиваем железо, а не ставим константу: см.
-                // EncoderCapabilities.bestProfile. Уровень (level) намеренно
-                // не трогаем — энкодер подберёт его сам под разрешение.
+                // Encoding profile. RootEncoder defaults to -1, omitting the
+                // key and letting the encoder choose, usually the simplest.
+                // High/Main save about 10-15% bitrate at equal quality through
+                // CABAC. At fixed bitrate, this improves the picture.
+                // Query hardware, not a constant: see
+                // EncoderCapabilities.bestProfile. Deliberately leave level
+                // unset so the encoder chooses it for the resolution.
                 profile = EncoderCapabilities.bestProfile(p.codec),
             )
-            // Только голый микрофон: другой источник выбран сценой (внутренний
-            // звук при захвате экрана), подменять его нельзя.
+            // Only a bare microphone: another source selected by the scene
+            // (internal audio during screen capture) must not be replaced.
             if (stream.audioSource is com.pedro.encoder.input.sources.audio.MicrophoneSource) {
-                // Чистый микрофон тоже заворачиваем: обёртка считает уровень для
-                // индикатора в HUD. Настройки после смены источника применяются
-                // заново — как и везде, где меняется источник звука.
+                // Wrap the bare microphone too: the wrapper measures level for
+                // the HUD indicator. Reapply settings after replacing the source,
+                // as everywhere else audio sources change.
                 runCatching {
                     stream.changeAudioSource(app.brix.streaming.overlay.OverlayAudioSource(meter = micMeter))
                     stream.applyAudioSettings(audioSettings)
@@ -511,8 +508,8 @@ class SrtlaStreamer(
                 appliedKeyframeSec = p.keyframeIntervalSec
             }
             if (restorePreview) {
-                // Превью гасили ради пересборки — вернуть, иначе экран замрёт
-                // на последнем кадре и пользователь решит, что камера умерла.
+                // Restore preview stopped for rebuilding; otherwise the screen
+                // freezes on the last frame and users think the camera died.
                 camera.resumePreviewIfDetached()
             }
             if (!videoOk || !audioOk) {
@@ -546,9 +543,9 @@ class SrtlaStreamer(
             }
             false
         } catch (e: Exception) {
-            // Текст исключения раньше уходил ТОЛЬКО в StreamState.technical, то
-            // есть в лог не попадало ничего: на устройстве «Failed to prepare
-            // stream» и полная тишина в logcat, разбирать нечем.
+            // Exception text previously went ONLY to StreamState.technical,
+            // leaving no log: "Failed to prepare stream" on the device with
+            // complete silence in logcat and nothing to investigate.
             Log.e(tag, "prepare failed", e)
             _state.update {
                 it.copy(
@@ -639,7 +636,7 @@ class SrtlaStreamer(
         }
     }
 
-    // Кто позвал stop(): несколько кадров стека выше нас, без наших же рамок.
+    // Caller of stop(): a few stack frames above us, excluding our own frames.
     private fun stopCaller(): String =
         Throwable().stackTrace
             .filterNot { it.className.startsWith("app.brix.streaming.SrtlaStreamer") }
@@ -651,17 +648,17 @@ class SrtlaStreamer(
     @Synchronized
     override fun stop() {
         val gen = session.generation
-        // Полевой прогон 31.08 дал обрыв эфира, который не удалось объяснить:
-        // SHUTDOWN ушёл на сервер, а в логе ни строки о причине. Автоматических
-        // остановок в коде нет — значит stop() кто-то позвал, но восстановить
-        // кто именно было уже нечем. Пишем вызывающего сразу.
+        // Field run 31.08 had an unexplained stream interruption: SHUTDOWN went
+        // to the server without any log explaining why. No code stops it
+        // automatically, so someone called stop(), but the caller could not
+        // be reconstructed. Log the caller immediately.
         Log.w("BrixStream", "stop() gen=$gen by=${stopCaller()}")
         restartGuard.onStop()
         activeGen = 0
-        // Фазу гасим ДО разборки бондинга, как в release(). Иначе было окно:
-        // каналы уже очищены, а session.isActive() ещё true, и колбэк смены
-        // сети с потока ConnectivityManager успевал добавить канал, который
-        // stop() уже не почистит — он доставался следующей сессии (аудит 23.09).
+        // Clear the phase BEFORE tearing down bonding, as in release().
+        // Otherwise links were cleared while session.isActive() remained true,
+        // allowing a ConnectivityManager callback to add a link stop() would
+        // no longer clear; it leaked into the next session (audit 23.09).
         updateSession(SessionPhase.Stopping, gen)
         reconnects.onStopped()
         fallbackJob?.cancel()
@@ -704,21 +701,20 @@ class SrtlaStreamer(
     override fun showCamera() = camera.showCamera()
 
     /**
-     * Звук сцены: микрофон, звук телефона или оба.
+     * Scene audio: microphone, phone audio or both.
      *
-     * Осторожно с оверлеями: когда включён звук донатов, источником звука
-     * работает наш микшер [OverlayAudioSource], и подмена источника здесь его
-     * снимает — донаты в эфире замолчат до следующего переключения. Это
-     * известное ограничение, а не случайность: оба механизма претендуют на
-     * один и тот же слот источника звука.
+     * Beware overlays: when donation audio is enabled, our mixer
+     * [OverlayAudioSource] is the audio source. Replacing it here removes the
+     * mixer, silencing donations on stream until the next toggle. This is a
+     * known limitation: both mechanisms compete for the same audio-source slot.
      */
     override fun setSceneAudio(
         mode: SceneAudio,
         projection: android.media.projection.MediaProjection?,
     ): Boolean {
         val source = when (mode) {
-            // Свой источник даже для чистого микрофона: он же считает уровень
-            // для индикатора в HUD (MicLevelMeter), а микширование выключено.
+            // Custom source even for microphone only: it measures the level
+            // for the HUD indicator (MicLevelMeter), with mixing disabled.
             SceneAudio.MIC -> app.brix.streaming.overlay.OverlayAudioSource(meter = micMeter)
             SceneAudio.INTERNAL -> {
                 val p = projection ?: return false
@@ -731,9 +727,9 @@ class SrtlaStreamer(
         }
         return runCatching {
             stream.changeAudioSource(source)
-            // Мьют, усиление и выбор устройства сбрасываются вместе с
-            // источником — подтверждаем их заново, как и везде. Мьют раньше
-            // здесь не подтверждался вовсе: смена сцены открывала микрофон.
+            // Source replacement resets mute, gain and device selection:
+            // reapply them as elsewhere. Mute previously was not reapplied
+            // here, so switching scenes unmuted the microphone.
             configureAudio(audioSettings)
             stream.setMicMuted(_state.value.micMuted)
             true
@@ -799,10 +795,10 @@ class SrtlaStreamer(
         }
     }
 
-    // Оверлеи целиком живут в OverlayHost (донат-алерты, живые оверлеи,
-    // подмешивание донат-звука, признак «виджет на связи»). Здесь остаются
-    // только реализации LiveStreamer, которые туда делегируют: интерфейс
-    // наружу не менялся, поменялось только то, кто внутри делает работу.
+    // Overlays live entirely in OverlayHost (donation alerts, live overlays,
+    // donation audio mixing and widget connectivity). Only LiveStreamer
+    // implementations delegating there remain here: the external interface
+    // is unchanged; only internal responsibility moved.
     private val overlays = OverlayHost(
         stream = stream,
         micMuted = { _state.value.micMuted },

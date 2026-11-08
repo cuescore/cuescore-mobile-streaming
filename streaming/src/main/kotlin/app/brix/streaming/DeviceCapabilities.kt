@@ -15,12 +15,11 @@ import kotlinx.coroutines.withContext
 data class VideoMode(val width: Int, val height: Int, val fps: Int)
 
 /**
- * Что умеет ЭТО железо — один опрос на запуск, дальше из кэша.
+ * Capabilities of THIS hardware: query once per launch, then use the cache.
  *
- * Настройки показывают только то, что здесь есть: выбор, которого телефон не
- * даёт, раньше заканчивался ошибкой на «Старте». Решение владельца 17.09 —
- * не подменять настройки молча при старте (откат 7616765), а не предлагать
- * недоступное.
+ * Settings show only available capabilities. Unsupported choices previously
+ * failed on Start. Owner decision 17.09: do not silently substitute settings
+ * on startup (revert 7616765); instead do not offer unavailable options.
  */
 data class DeviceCapabilities(
     val hardwareCodecs: Set<Codec>,

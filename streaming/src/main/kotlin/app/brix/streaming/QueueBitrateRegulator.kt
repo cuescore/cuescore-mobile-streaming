@@ -3,35 +3,35 @@ package app.brix.streaming
 import android.os.SystemClock
 
 /**
- * Адаптивный битрейт для транспортов поверх TCP (RTMP, WHIP).
+ * Adaptive bitrate for transports over TCP (RTMP, WHIP).
  *
- * **Почему отдельный класс, а не наш [AdaptiveBitrateSrtBelabox].** Тот — порт
- * belacoder, и пять из семи его переменных состояния описывают RTT: `rttAverage`,
- * `rttMin`, `rttJitter`, `rttAverageDelta`, плюс пороги `rttThMax`/`rttThMin`.
- * У RTMP поверх TCP round-trip недоступен в принципе. Если подать нули, ветка
- * роста становится безусловной (`rttMin` уползает в ноль, порог вырождается в
- * 1 мс, `rttAverageDelta` тождественно ноль) — то есть регулятор поднимал бы
- * битрейт при любом состоянии сети. Это не переиспользование, а отключение
- * половины контура, да ещё и ценой правок в общем классе, которым живёт
- * рабочий SRTLA-путь.
+ * **Why a separate class instead of our [AdaptiveBitrateSrtBelabox].** That is a
+ * port of belacoder, and five of its seven state variables describe RTT:
+ * `rttAverage`, `rttMin`, `rttJitter`, `rttAverageDelta`, plus the
+ * `rttThMax`/`rttThMin` thresholds. For RTMP over TCP, round-trip time is
+ * unavailable in principle. Feeding in zeros makes the increase branch unconditional
+ * (`rttMin` drifts to zero, the threshold collapses to 1 ms, and `rttAverageDelta`
+ * is identically zero)—so the regulator would raise the bitrate in any network
+ * conditions. This is not reuse; it disables half the control loop, at the cost of
+ * changes to the shared class used by the working SRTLA path.
  *
- * **На чём работает здесь.** TCP не теряет пакеты — при нехватке полосы растёт
- * очередь отправки, а с ней задержка, неограниченно. Значит сигнал затора —
- * заполненность этой очереди: `getItemsInCache()/getCacheSize()` у
- * RootEncoder. Доля заполнения это и есть недоставленная часть.
+ * **What this works with.** TCP does not lose packets—when bandwidth is insufficient,
+ * the send queue grows, and latency grows with it without bound. So the congestion
+ * signal is the fill level of that queue: `getItemsInCache()/getCacheSize()` in
+ * RootEncoder. The fill ratio is the undelivered portion.
  *
- * **Откуда числа.** Восстановление — по документированному поведению Larix для
- * RTMP: шаг 500 кбит/с не чаще раза в 30 секунд и только если очередь всё это
- * время оставалась пустой. Снижение — пропорционально заполнению очереди
- * (аналог «снизить на долю недоставленного» там же), плюс резкий срез при
- * почти полной очереди, чтобы задержка не успела вырасти.
+ * **Where the numbers come from.** Recovery follows Larix's documented RTMP behavior:
+ * a 500 kbps step no more often than every 30 seconds, and only if the queue stayed
+ * empty the whole time. Reduction is proportional to the queue fill level (the same
+ * source's equivalent of “reduce by the undelivered portion”), plus a sharp cut when
+ * the queue is nearly full so latency has no time to grow.
  *
- * **Пол — [minimumBitrate] из профиля, а не доля от целевого.** У Larix пол 25 %,
- * но в этом проекте сознательно решено не схлопывать качество за пользователя:
- * нижнюю границу задаёт он сам.
+ * **The floor is [minimumBitrate] from the profile, not a fraction of the target.**
+ * Larix's floor is 25%, but this project deliberately avoids reducing quality on the
+ * user's behalf: the user sets the lower bound.
  *
- * **Пороги — первого приближения.** Они выведены из поведения очереди, а не
- * измерены в поле; калибровка отдельной задачей.
+ * **Thresholds are first approximations.** They are derived from queue behavior, not
+ * measured in the field; calibration is a separate task.
  */
 internal class QueueBitrateRegulator(
     private var targetBitrate: Long,
@@ -39,27 +39,26 @@ internal class QueueBitrateRegulator(
     private var currentBitrate: Long = targetBitrate,
     private val clock: () -> Long = SystemClock::elapsedRealtime,
 ) {
-    /** Очередь почти полна: режем вдвое, не дожидаясь подтверждений. */
+    /** Queue is nearly full: halve the bitrate without waiting for confirmation. */
     private val hardFill = 0.60
 
-    /** Очередь заметно наполнена — снижаем пропорционально. */
+    /** Queue is significantly filled—reduce proportionally. */
     private val softFill = 0.20
 
-    /** Очередь считается пустой (единичный кадр в полёте — норма). */
+    /** Queue is considered empty (a single frame in flight is normal). */
     private val clearFill = 0.05
 
-    // «Никогда»: иначе на нулевой отметке часов первый же резкий срез
-    // блокировался бы окном ограничения частоты, то есть ровно в момент, когда
-    // затор случился на старте эфира.
+    // “Never”: otherwise, at a zero clock value the first sharp reduction would be
+    // blocked by the rate-limit window, precisely when congestion occurs at stream start.
     private var lastDecreaseAt = NEVER
     private var lastIncreaseAt = NEVER
 
-    /** Момент, с которого очередь непрерывно пуста. 0 — сейчас не пуста. */
+    /** When the queue became continuously empty. 0 means it is not empty now. */
     private var clearSince = 0L
 
-    /** Одиночный всплеск очереди — это один кадр-ключ, а не затор. Требуем,
-     *  чтобы наполнение держалось два такта подряд, как это делает
-     *  `consecutiveBadMid` в SRT-регуляторе по полевой находке 31.08. */
+    /** A single queue spike is one keyframe, not congestion. Require the fill level to
+     *  persist for two consecutive ticks, as `consecutiveBadMid` does in the SRT
+     *  regulator, following the field finding from 31.08. */
     private var consecutiveSoft = 0
 
     @Synchronized
@@ -82,9 +81,9 @@ internal class QueueBitrateRegulator(
     fun current(): Long = currentBitrate
 
     /**
-     * Один такт регулятора (зовётся раз в секунду).
+     * One regulator tick (called once per second).
      *
-     * @return новый битрейт, если он изменился, иначе null.
+     * @return the new bitrate if it changed, otherwise null.
      */
     @Synchronized
     fun update(itemsInCache: Int, cacheSize: Int): Long? {
@@ -106,7 +105,7 @@ internal class QueueBitrateRegulator(
                 lastDecreaseAt = now
             }
             consecutiveSoft >= 2 && now - lastDecreaseAt >= SOFT_DECREASE_INTERVAL_MS -> {
-                // Снижаем на долю, которую сеть не забрала.
+                // Reduce by the portion the network did not take.
                 bitrate = maxOf((bitrate * (1.0 - fill)).toLong(), minimumBitrate)
                 lastDecreaseAt = now
             }
@@ -129,7 +128,7 @@ internal class QueueBitrateRegulator(
         const val HARD_DECREASE_INTERVAL_MS = 3_000L
         const val SOFT_DECREASE_INTERVAL_MS = 2_000L
 
-        /** Larix для RTMP восстанавливает раз в 30 с шагами по 500 кбит/с. */
+        /** Larix recovers RTMP bitrate every 30 s in 500 kbps steps. */
         const val RECOVERY_INTERVAL_MS = 30_000L
         const val RECOVERY_QUIET_MS = 30_000L
         const val RECOVERY_STEP_BPS = 500_000L

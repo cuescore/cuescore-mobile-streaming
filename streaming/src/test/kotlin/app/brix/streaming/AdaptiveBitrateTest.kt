@@ -34,8 +34,8 @@ class AdaptiveBitrateTest {
             clock = clock::now,
         )
 
-        // Два замера подряд: одиночный всплеск теперь намеренно не режет, см.
-        // тест «одиночный всплеск в полёте не режет битрейт».
+        // Two consecutive measurements: a single spike is now intentionally not enough to reduce bitrate; see
+        // the test “a single in-flight spike does not reduce bitrate”.
         abr.update(congestedStats())
         abr.update(congestedStats())
         assertTrue("expected bitrate to decrease, got ${abr.currentBitrateKbps()}", abr.currentBitrateKbps() < 2000)
@@ -43,12 +43,12 @@ class AdaptiveBitrateTest {
 
     @Test
     fun `одиночный всплеск в полёте не режет битрейт`() {
-        // Полевой разбор 31.08: packetsInFlight снимается мгновенным снимком раз
-        // в 200 мс, а величина пилит между подтверждениями — наблюдалась пила
-        // 15 -> 1055 при неподвижном RTT (47-58 мс) и НУЛЕ потерь, потому что
-        // одна квитанция снимает с полёта сразу сотни пакетов. Один такой снимок
-        // выше порога срезал битрейт вдвое, и на резком движении картинка
-        // сыпалась артефактами при полностью здоровой сети.
+        // Field analysis 31.08: packetsInFlight is sampled instantaneously once
+        // every 200 ms, and sawtooths between acknowledgments — a sawtooth
+        // from 15 to 1055 was observed at steady RTT (47–58 ms) and ZERO losses, because
+        // one acknowledgment removes hundreds of packets from flight at once. One such sample
+        // above the threshold cut the bitrate in half, and during rapid movement the image
+        // broke into artifacts despite a completely healthy network.
         val clock = ManualClock()
         val abr = AdaptiveBitrateSrtBelabox(
             targetBitrate = 7_000_000,
@@ -56,14 +56,14 @@ class AdaptiveBitrateTest {
             initialBitrate = 5_000_000,
             clock = clock::now,
         )
-        // Здоровая сеть: набираем средние, чтобы пороги устоялись.
+        // Healthy network: collect averages so the thresholds stabilize.
         repeat(20) {
             clock.advance(200)
             abr.update(goodStats())
         }
         val before = abr.currentBitrateKbps()
 
-        // Один зубец пилы — сеть при этом здорова: RTT прежний, потерь нет.
+        // One sawtooth peak — the network is healthy: RTT is unchanged and there are no losses.
         clock.advance(200)
         abr.update(SrtStats(rttMs = 20.0, packetsInFlight = 900.0, mbpsSendRate = 7.0, latencyMs = 1000))
         assertTrue(
@@ -71,7 +71,7 @@ class AdaptiveBitrateTest {
             abr.currentBitrateKbps() >= before,
         )
 
-        // А устойчивое превышение — должно.
+        // But sustained excess should.
         clock.advance(200)
         abr.update(SrtStats(rttMs = 20.0, packetsInFlight = 900.0, mbpsSendRate = 7.0, latencyMs = 1000))
         clock.advance(200)
@@ -110,9 +110,9 @@ class AdaptiveBitrateTest {
             clock = clock::now,
         )
 
-        // Шаг как в бою: SrtlaStream.startAdaptiveLoop тикает раз в 200 мс.
-        // Раньше здесь стоял Thread.sleep(450) — тест зависел от настенных
-        // часов и от того, чем занята машина.
+        // Same interval as in production: SrtlaStream.startAdaptiveLoop ticks every 200 ms.
+        // Thread.sleep(450) used to be here — the test depended on wall-clock
+        // time and on what else the machine was doing.
         repeat(40) {
             abr.update(goodStats())
             clock.advance(TICK_MS)
@@ -144,14 +144,14 @@ class AdaptiveBitrateTest {
         fun advance(ms: Long) { t += ms }
     }
 
-    // ---- Постоянные времени ----
+    // ---- Time constants ----
     //
-    // Алгоритм — порт belacoder, который тикает раз в 20 мс, а наш цикл идёт
-    // раз в 200 мс. Коэффициенты сглаживания были скопированы дословно, поэтому
-    // все постоянные времени оказались в десять раз длиннее задуманных, и ни
-    // один тест этого не видел: наружу торчал только currentBitrateKbps().
-    // Тесты ниже смотрят на само сглаживание через debugState() и падают, если
-    // коэффициенты снова разъедутся с периодом опроса.
+    // The algorithm is ported from belacoder, which ticks every 20 ms, while our loop runs
+    // every 200 ms. The smoothing coefficients were copied verbatim, so
+    // all time constants ended up ten times longer than intended, and not
+    // a single test caught it: only currentBitrateKbps() was exposed externally.
+    // The tests below inspect the smoothing itself through debugState() and fail if
+    // the coefficients drift out of sync with the polling interval again.
 
     private fun abrWithClock(clock: ManualClock) = AdaptiveBitrateSrtBelabox(
         targetBitrate = 7_000_000,
@@ -167,8 +167,8 @@ class AdaptiveBitrateTest {
         repeat(40) { clock.advance(TICK_MS); abr.update(goodStats()) }
         val before = abr.debugState().rttAverage
 
-        // Ступенька вверх, ровно 2 с (десять тиков по 200 мс) — за постоянную
-        // времени экспонента проходит 1 - 1/e ≈ 63 % пути.
+        // Step up, exactly 2 s (ten 200 ms ticks) — over one time
+        // constant the exponential covers 1 - 1/e ≈ 63% of the distance.
         val stepRtt = 120.0
         repeat(10) { clock.advance(TICK_MS); abr.update(goodStats().copy(rttMs = stepRtt)) }
         val after = abr.debugState().rttAverage
@@ -186,7 +186,7 @@ class AdaptiveBitrateTest {
         val abr = abrWithClock(clock)
         val target = 7.0 * 1000.0 * 1000.0 / 1024.0
 
-        // Один тик — заведомо меньше трети пути.
+        // One tick is deliberately less than one third of the distance.
         clock.advance(TICK_MS)
         abr.update(goodStats())
         assertTrue(
@@ -194,7 +194,7 @@ class AdaptiveBitrateTest {
             abr.debugState().throughput / target < 0.40,
         )
 
-        // Три тика сверху — суммарно 0.8 с, то есть больше постоянной времени.
+        // Three more ticks — 0.8 s total, i.e. greater than one time constant.
         repeat(3) { clock.advance(TICK_MS); abr.update(goodStats()) }
         val reached = abr.debugState().throughput / target
         assertTrue(
@@ -207,13 +207,13 @@ class AdaptiveBitrateTest {
     fun `нижняя оценка RTT ползёт вверх примерно на пять процентов в секунду`() {
         val clock = ManualClock()
         val abr = abrWithClock(clock)
-        // Прогрев на низком RTT прижимает rttMin к 20 мс.
+        // Warm-up at low RTT pulls rttMin down to 20 ms.
         repeat(20) { clock.advance(TICK_MS); abr.update(goodStats()) }
         val start = abr.debugState().rttMin
 
-        // Секунда на высоком RTT: rttMin вниз не тянет никто, значит виден
-        // чистый дрейф вверх. Именно он задаёт rttThMin — единственный порог
-        // ветки роста; пока он полз в десять раз медленнее, рост был закрыт.
+        // One second at high RTT: nothing pulls rttMin down, so we see the
+        // pure upward drift. That is what sets rttThMin — the only threshold in the
+        // growth branch; while it drifted ten times more slowly, growth was blocked.
         val high = goodStats().copy(rttMs = 500.0)
         repeat(5) { clock.advance(TICK_MS); abr.update(high) }
         val grown = abr.debugState().rttMin / start
@@ -229,15 +229,15 @@ class AdaptiveBitrateTest {
         val clock = ManualClock()
         val abr = abrWithClock(clock)
         repeat(20) { clock.advance(TICK_MS); abr.update(goodStats()) }
-        // Одиночный скачок в полёте задирает пиковую оценку джиттера.
+        // A single in-flight spike raises the peak jitter estimate.
         clock.advance(TICK_MS)
         abr.update(goodStats().copy(packetsInFlight = 400.0))
         val peak = abr.debugState().sendBufferSizeJitter
         assertTrue("всплеск должен поднять оценку джиттера", peak > 100.0)
 
-        // Две секунды спокойной сети — это примерно одна постоянная времени,
-        // значит от пика остаётся около 1/e. Со старым коэффициентом осталось
-        // бы 90 %: всплеск жил бы двадцать секунд.
+        // Two seconds of a quiet network is about one time constant,
+        // so about 1/e of the peak should remain. With the old coefficient,
+        // 90% would remain: the spike would last twenty seconds.
         repeat(10) { clock.advance(TICK_MS); abr.update(goodStats()) }
         val left = abr.debugState().sendBufferSizeJitter / peak
         assertTrue(
@@ -246,15 +246,15 @@ class AdaptiveBitrateTest {
         )
     }
 
-    // ---- Дыры, которых не было в покрытии вовсе ----
+    // ---- Gaps that were not covered at all ----
 
     @Test
     fun `отброшенный пакет режет битрейт на четверть сразу`() {
         val clock = ManualClock()
         val abr = abrWithClock(clock)
         clock.advance(TICK_MS)
-        // Ветка drop: реальная потеря по окну, режем на четверть без ожидания
-        // подтверждающих замеров — в отличие от порогов, это не оценка, а факт.
+        // Drop branch: a real loss in the window, so reduce by a quarter immediately, without waiting for
+        // confirming measurements — unlike thresholds, this is a fact, not an estimate.
         abr.update(goodStats().copy(droppedPackets = 1))
         assertEquals(1500L, abr.currentBitrateKbps())
     }
@@ -274,14 +274,14 @@ class AdaptiveBitrateTest {
             abr.update(goodStats().copy(droppedPackets = 1))
             return abr.currentBitrateKbps()
         }
-        // FAST_IRL режет в полтора раза глубже базового, SLOW_IRL — вдвое мягче.
+        // FAST_IRL cuts one and a half times deeper than the baseline, SLOW_IRL is twice as gentle.
         val base = cutWith(app.brix.core.AbrAlgorithm.BELABOX)
         assertTrue(cutWith(app.brix.core.AbrAlgorithm.FAST_IRL) < base)
         assertTrue(cutWith(app.brix.core.AbrAlgorithm.SLOW_IRL) > base)
     }
 
     private companion object {
-        /** Период цикла ABR в бою — `SrtlaStream.startAdaptiveLoop`. */
+        /** ABR cycle interval in production — `SrtlaStream.startAdaptiveLoop`. */
         const val TICK_MS = 200L
     }
 
@@ -323,8 +323,8 @@ class AdaptiveBitrateTest {
             initialBitrate = 1_000_000,
             clock = clock::now,
         )
-        // Окно роста 400 мс при такте 200 мс и строгом сравнении открывается
-        // раз в три тика — 90 тиков это 30 подъёмов, то есть 18 секунд эфира.
+        // The growth window is 400 ms at a 200 ms tick and opens on a strict comparison
+        // once every three ticks — 90 ticks means 30 increases, or 18 seconds of broadcast.
         repeat(90) {
             clock.advance(TICK_MS)
             abr.update(goodStats())

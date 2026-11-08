@@ -10,14 +10,14 @@ import app.brix.moblink.MoblinkServer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Moblink: чужие телефоны-релеи подключаются к нам по WebSocket и становятся
- * дополнительными каналами бондинга — ровно такими же, как Wi-Fi или сота
- * (см. [onRelayTunnelReady] ниже: `addConnection` + `startAddedConnection` с
- * адресом самого релея). Ради этого в `SrtlaClient`/`SrtlaConnection` ничего
- * менять не пришлось — они изначально умеют свой host:port на соединение.
+  * Moblink: other people’s phones connect to us over WebSocket as relays and become
+  * additional bonding links — exactly like Wi-Fi or cellular
+  * (see [onRelayTunnelReady] below: `addConnection` + `startAddedConnection` with
+  * the relay’s own address). This required no changes to `SrtlaClient`/`SrtlaConnection` —
+  * they already support their own host:port for each connection.
  *
- * Выделено из [SrtlaStreamer]. Живёт ровно столько же, сколько эфир: поднимается
- * из `start()`, гасится из `stop()`/`release()`.
+  * Extracted from [SrtlaStreamer]. It lives for exactly as long as the live stream: started
+  * by `start()`, stopped by `stop()`/`release()`.
  */
 internal class MoblinkHost(
     private val appContext: Context,
@@ -38,12 +38,12 @@ internal class MoblinkHost(
         this.settings = settings
     }
 
-    /** Пробросить релеям адрес приёмника, как только он стал известен. */
+    /** Pass the receiver address to relays as soon as it becomes known. */
     fun startTunnels(host: String, port: Int) {
         server?.startTunnels(host, port)
     }
 
-    /** Поднять сервер релеев и объявить себя по mDNS. */
+    /** Start the relay server and announce ourselves over mDNS. */
     fun start() {
         if (!settings.enabled || server != null) return
         val newServer = MoblinkServer(settings.port, settings.password)

@@ -151,11 +151,11 @@ class DonationAudioPlayer(
             val bufferInfo = MediaCodec.BufferInfo()
             var sawInputEos = false
             var sawOutputEos = false
-            // Предел по времени: на повреждённом файле декодер может так и не
-            // выставить конец потока, и цикл крутился бы вечно, занимая поток
-            // общего пула Dispatchers.Default (аудит 23.09). Декодирование
-            // идёт в разы быстрее реального времени — 15 с хватит с запасом
-            // и на длинную озвучку.
+            // Time limit: with a damaged file, the decoder may never
+            // set the end of the stream, and the loop would run forever, occupying a thread
+            // of the shared Dispatchers.Default pool (audit 23.09). Decoding
+            // runs several times faster than real time—15 seconds is more than enough
+            // even for a long voiceover.
             val deadline = android.os.SystemClock.elapsedRealtime() + DECODE_DEADLINE_MS
 
             while (!sawOutputEos) {

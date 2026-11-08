@@ -6,15 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Сценарии переподключения SRTLA без телефона.
+ * SRTLA reconnection scenarios without a phone.
  *
- * Каждый тест — случай из аудита 23.09 или из поля: до выноса логики в
- * [SrtlaReconnectController] они проверялись только эфиром, и три из них
- * оказались сломаны одновременно.
+ * Each test is a case from audit 23.09 or the field. Before extracting
+ * [SrtlaReconnectController], only live streams tested them, and three
+ * were broken simultaneously.
  */
 class SrtlaReconnectControllerTest {
 
-    /** Планировщик, который ничего не запускает сам: тест решает, когда «прошла задержка». */
+    /** Scheduler that runs nothing automatically: the test decides when the delay has elapsed. */
     private class ManualScheduler : SrtlaReconnectController.Scheduler {
         val delays = mutableListOf<Long>()
         private val queue = mutableListOf<Pair<Task, () -> Unit>>()
@@ -35,7 +35,7 @@ class SrtlaReconnectControllerTest {
 
         val pending: Int get() = queue.count { it.first.isActive }
 
-        /** Сработать следующей живой задаче. */
+        /** Run the next active task. */
         fun fire() {
             val (task, block) = queue.first { it.first.isActive }
             task.fired = true
@@ -110,12 +110,12 @@ class SrtlaReconnectControllerTest {
     fun `several failure signals of one attempt take a single backoff step`() {
         val r = Rig()
         r.goLive()
-        r.controller.onDisconnect() // ступень 1
-        r.scheduler.fire() // попытка 1: Connecting, transport.reconnect
+        r.controller.onDisconnect() // Step 1
+        r.scheduler.fire() // Attempt 1: Connecting, transport.reconnect
         assertEquals(SessionPhase.Connecting, r.session.phase)
 
-        // Одна неудачная попытка шлёт три сигнала: обрыв отправителя, таймаут
-        // рукопожатия, таймаут соединения.
+        // One failed attempt sends three signals: sender disconnect,
+        // handshake timeout and connection timeout.
         r.controller.onDisconnect()
         r.controller.onFailure("SRT handshake timeout")
         r.controller.onFailure("SRTLA connection timeout")
@@ -147,7 +147,7 @@ class SrtlaReconnectControllerTest {
         r.controller.onDisconnect()
         assertEquals(SessionPhase.Reconnecting, r.session.phase)
 
-        // Ответ на старое рукопожатие оживил отправителя раньше запланированной попытки.
+        // A reply to the old handshake revived the sender before the scheduled attempt.
         r.controller.onSuccess()
 
         assertEquals(SessionPhase.Live, r.session.phase)

@@ -10,7 +10,7 @@ import okhttp3.Request
 data class KickChatroomInfo(
     val chatroomId: String,
     val chatroomChannelId: String,
-    /** Номер пользователя-владельца канала — его, а не чатрум, ждёт 7TV. */
+    /** Channel owner's user ID: 7TV expects this, not the chatroom ID. */
     val userId: String? = null,
 )
 

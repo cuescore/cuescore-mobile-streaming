@@ -5,8 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * Импорт ссылок Larix Grove (ими же делится IRL Pro), 16.09.
- * Формат: https://softvelum.com/larix/grove/
+ * Import Larix Grove links (also shared by IRL Pro), 16.09.
+ * Format: https://softvelum.com/larix/grove/
  */
 class LarixImportTest {
 

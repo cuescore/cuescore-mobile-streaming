@@ -38,15 +38,15 @@ import app.brix.core.Ids
 import app.brix.core.Scene
 
 /**
- * Сцены: наборы того, что видит зритель, с переключением одним нажатием.
+ * Scenes: sets of what the viewer sees, switchable with one tap.
  *
- * Модель `Scene` лежала в коде с самого начала и не читалась никем — сцены
- * существовали в файле настроек и нигде больше. Здесь они наконец получают
- * управление.
+ * The `Scene` model had been in the code from the beginning but was not read by
+ * anything — scenes existed in the settings file and nowhere else. Here they
+ * finally become actionable.
  *
- * Сцена держит сторону камеры и список оверлеев с виджетами. Пока ни одной
- * сцены нет, приложение работает как раньше: показывает всё включённое. Это
- * важно — заведение сцен не должно означать «теперь настраивай заново».
+ * A scene holds the camera side and a list of overlays and widgets. Until there
+ * is at least one scene, the app works as before: it shows everything enabled.
+ * This matters — adding scenes must not mean “now configure everything again.”
  */
 @Composable
 fun ScenesScreen(
@@ -60,10 +60,10 @@ fun ScenesScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // Настоящий подэкран (открывается из Стрим), а не экран категории —
-        // раньше вызывался вовсе без onBack, в отличие от соседей
-        // (ServerProfiles/StreamProfiles рядом), поэтому кнопки назад тут не
-        // было вообще. Хлебная крошка — тем же приёмом, что у соседей.
+        // A real sub-screen (opened from Stream), not a category screen — it
+        // used to be called without onBack, unlike its neighboring screens
+        // (ServerProfiles/StreamProfiles), so there was no back button at all.
+        // The breadcrumb uses the same approach as its neighbors.
         topBar = {
             SettingsTopBar(
                 "${stringResource(R.string.settings_stream)} · ${stringResource(R.string.settings_scenes)}",
@@ -138,13 +138,13 @@ fun ScenesScreen(
 }
 
 /**
- * Редактор сцены — ОТДЕЛЬНЫЙ ЭКРАН, как у профиля стрима.
+ * The scene editor is a SEPARATE SCREEN, like the stream profile editor.
  *
- * До этого он был диалогом, и это было ошибкой: настроек здесь столько же,
- * сколько в профиле, а диалог их не вмещает. Попытки растянуть его ломали
- * прокрутку, которую AlertDialog делает сам. Экран этой проблемы не имеет и
- * заодно выглядит как остальное приложение — та же шапка «Отмена / название /
- * Сохранить», те же карточки.
+ * It used to be a dialog, which was a mistake: it has as many settings as a
+ * profile, and the dialog cannot fit them. Attempts to stretch it broke the
+ * scrolling that AlertDialog handles itself. A screen avoids that problem and
+ * also looks like the rest of the app — the same “Cancel / title / Save” header
+ * and the same cards.
  */
 @Composable
 fun SceneEditScreen(
@@ -168,8 +168,8 @@ fun SceneEditScreen(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) {
-            // Постоянное разрешение: без него ссылка протухнет после
-            // перезапуска приложения, и заставка молча превратится в камеру.
+            // Persist the permission: without it, the URI expires after an app
+            // restart, and the still image silently turns back into the camera.
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
@@ -320,17 +320,17 @@ fun SceneEditScreen(
 }
 
 /**
- * Хост вместо полного адреса.
+ * Host instead of the full address.
  *
- * Ссылки на виджеты и оверлеи длинные, часто с ключом внутри. В списке галочек
- * от полного адреса пользы нет — он не помещается и рвёт строку, — а хост
- * отличает один слой от другого.
+ * Widget and overlay URLs are long and often contain a key. The full address is
+ * not useful in the checkbox list — it does not fit and wraps the line — while
+ * the host distinguishes one layer from another.
  */
 private fun shortUrl(url: String): String = runCatching {
     java.net.URI(url).host ?: url
 }.getOrNull() ?: url
 
-/** Что в сцене: источник и сколько слоёв поверх. */
+/** What's in the scene: the source and how many layers are on top. */
 @Composable
 private fun sceneSummary(scene: Scene): String {
     val what = stringResource(

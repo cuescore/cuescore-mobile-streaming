@@ -7,12 +7,12 @@ import java.net.URI
 /** Verified live 04.09 against a real, currently-streaming channel — see
  *  [kickSubscribeChannels] for why five channel names are subscribed at once.
  *
- *  Ключ приложения Pusher Kick меняет молча: около 08.10 старый
- *  `32cbd69e4b950bf97679` стал отвечать «App key not in this cluster», и чат
- *  Kick в 0.2.0 не подключался вовсе (Moblin сменил ключ 08.10, коммит #550).
- *  Новый проверен 26.10 на живом канале: подписка на `chatrooms.<id>.v2` и
- *  приход `ChatMessageEvent`. Сменится снова — симптом тот же: Twitch и VK
- *  работают, Kick молчит. */
+ *  The Pusher app key for Kick changes without notice: around Oct 8, the old
+ *  `32cbd69e4b950bf97679` started returning "App key not in this cluster," and
+ *  Kick chat in 0.2.0 wouldn't connect at all (Moblin changed its key on Oct 8,
+ *  commit #550). The new key was verified on Oct 26 on a live channel: subscribing
+ *  to `chatrooms.<id>.v2` and receiving `ChatMessageEvent`. If it changes again,
+ *  the symptom is the same: Twitch and VK work, Kick is silent. */
 internal const val KICK_PUSHER_WS_URL =
     "wss://ws-us2.pusher.com/app/34bf7a0ff419a2a775b9?protocol=7&client=js&version=7.6.0&flash=false"
 

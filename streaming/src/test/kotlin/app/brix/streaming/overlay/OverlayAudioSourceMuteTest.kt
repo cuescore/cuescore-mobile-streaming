@@ -7,9 +7,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Мьют как у IRL Pro (владелец, 26.10): индикатор продолжает показывать голос
- * серым, а в эфир уходит тишина. Раньше глушила библиотека внутри микрофона, и
- * индикатор видел ноль — мьют было не отличить от тишины.
+ * Mute, as on IRL Pro (the owner, 26.10): the indicator continues to show voice
+ * in gray, while silence goes to the live stream. Previously, the library muted
+ * inside the microphone, so the indicator saw zero—mute was indistinguishable from silence.
  */
 class OverlayAudioSourceMuteTest {
 

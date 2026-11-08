@@ -6,8 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Время подаётся вручную: восстановление у регулятора рассчитано на
- * тридцатисекундные окна, и без управляемых часов такой тест шёл бы минутами.
+ * Supply time manually: regulator recovery uses thirty-second windows,
+ * so without a controlled clock this test would take minutes.
  */
 class QueueBitrateRegulatorTest {
 
@@ -69,7 +69,7 @@ class QueueBitrateRegulatorTest {
         val clock = ManualClock()
         val r = regulator(clock)
         r.reset(4_000_000)
-        // 25 % — выше мягкого порога, но один такт: это ключевой кадр, не затор.
+        // 25% exceeds the soft threshold, but for one tick: a keyframe, not congestion.
         assertNull(r.update(itemsInCache = 50, cacheSize = 200))
         assertEquals(4_000_000L, r.current())
     }
@@ -81,7 +81,7 @@ class QueueBitrateRegulatorTest {
         r.reset(4_000_000)
         assertNull(r.update(50, 200))
         clock.advance(2_000)
-        // fill = 0.25 -> остаётся 75 %
+        // fill = 0.25 -> 75% remains
         assertEquals(3_000_000L, r.update(50, 200))
     }
 
@@ -106,7 +106,7 @@ class QueueBitrateRegulatorTest {
             r.update(0, 200)
             clock.advance(1_000)
         }
-        // Очередь дёрнулась — окно тишины начинается заново.
+        // Queue spiked: restart the quiet window.
         r.update(60, 200)
         clock.advance(1_000)
         repeat(10) {

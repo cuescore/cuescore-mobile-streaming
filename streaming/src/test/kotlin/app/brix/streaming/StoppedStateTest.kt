@@ -7,12 +7,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * После остановки эфира в состоянии не остаётся цифр, которые показывает HUD.
+ * After stopping a stream, state retains no stale HUD metrics.
  *
- * 14.09: сброс был написан трижды и разъехался — SRTLA не чистил список каналов, и
- * HUD показывал застывшие битрейты по Wi-Fi и соте, будто эфир идёт. А
- * `adaptiveBitrateKbps` не обнулял никто, хотя при включённом ABR показывают именно
- * его. Тест держит общий сброс, чтобы это не разошлось снова.
+ * 14.09: three reset implementations diverged. SRTLA did not clear links,
+ * leaving frozen Wi-Fi and cellular bitrates in the HUD as if still streaming.
+ * Nobody reset `adaptiveBitrateKbps`, although the HUD uses it when ABR is
+ * enabled. This test enforces a shared reset to prevent future divergence.
  */
 class StoppedStateTest {
 
@@ -29,7 +29,7 @@ class StoppedStateTest {
     fun `цифры, которые показывает HUD, обнуляются`() {
         val s = live().stopped()
         assertEquals(0L, s.bitrateKbps)
-        // HUD показывает adaptiveBitrateKbps, когда ABR включён — его и проверяем.
+        // HUD shows adaptiveBitrateKbps with ABR enabled, so verify that value.
         assertEquals(0L, s.adaptiveBitrateKbps)
         assertTrue("список каналов пуст", s.connections.isEmpty())
         assertNull(s.connectedAtElapsedMs)
@@ -38,8 +38,8 @@ class StoppedStateTest {
 
     @Test
     fun `настройки эфира сбросом не трогаются`() {
-        // Сброс относится к показаниям, а не к тому, что человек настроил: мьют
-        // микрофона и фонарь после Stop должны остаться как были.
+        // Reset readings, not user choices: microphone mute and torch
+        // must remain unchanged after Stop.
         val s = live().copy(micMuted = true, torchOn = true).stopped()
         assertTrue(s.micMuted)
         assertTrue(s.torchOn)

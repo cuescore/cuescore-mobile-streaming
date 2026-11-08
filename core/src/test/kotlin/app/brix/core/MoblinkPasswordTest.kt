@@ -6,10 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Пароль Moblink перестал быть общеизвестным (14.09).
+ * Moblink password is no longer publicly known (14.09).
  *
- * До этого значением по умолчанию было «1234» — одинаковым у всех, у кого стоит
- * приложение, при том что служба поднимается в локальной сети.
+ * Previously the default was "1234", identical for every installation,
+ * despite the service being exposed on the local network.
  */
 class MoblinkPasswordTest {
 
@@ -17,8 +17,8 @@ class MoblinkPasswordTest {
     fun `пароль пригоден к вводу руками`() {
         val p = generateMoblinkPassword()
         assertEquals("восемь знаков", 8, p.length)
-        // Путающиеся при наборе знаки выброшены намеренно: иначе человек ошибётся
-        // на улице и заменит пароль на что-нибудь простое.
+        // Deliberately exclude ambiguous characters: otherwise users mistype
+        // outdoors and replace the password with something simple.
         assertTrue("нет путающихся знаков", p.none { it in "01loi" })
         assertTrue("только строчные и цифры", p.all { it.isLowerCase() || it.isDigit() })
     }

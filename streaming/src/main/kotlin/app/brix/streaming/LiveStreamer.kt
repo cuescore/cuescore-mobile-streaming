@@ -20,32 +20,32 @@ interface LiveStreamer {
     val state: StateFlow<StreamState>
 
     /**
-     * Отметка `elapsedRealtime` раз в секунду — только для счётчика времени
-     * эфира в HUD.
+     * An `elapsedRealtime` timestamp once per second — only for the stream
+     * uptime counter in the HUD.
      *
-     * **Почему отдельным потоком, а не полем [StreamState].** Раньше это было
-     * поле `statsTickElapsedMs`, и оно меняло общее состояние ежесекундно.
-     * Compose отслеживает чтение на уровне объекта состояния, а экран стримера
-     * собирает `state` целиком в самом верху — значит отметка времени, которая
-     * не интересна никому, кроме часов, помечала устаревшим всё тело
-     * composable на две с лишним тысячи строк: пересобирались списки кнопок,
-     * заново создавались обработчики, заново считались производные значения.
-     * Раз в секунду, весь эфир, ради того чтобы `00:29` стало `00:30`.
+     * **Why a separate flow instead of a [StreamState] field.** This used to be
+     * the `statsTickElapsedMs` field, changing the overall state every second.
+     * Compose tracks reads at the state-object level, and the streamer screen
+     * collects `state` as a whole at the very top — so a timestamp nobody cares
+     * about except the clock invalidated the entire composable body, over two
+     * thousand lines long: button lists were rebuilt, handlers recreated, and
+     * derived values recalculated. Every second, for the whole broadcast, just
+     * to change `00:29` to `00:30`.
      *
-     * Отдельный поток читается только тем куском интерфейса, который часы и
-     * показывает, поэтому перерисовывается тоже только он. Второго таймера при
-     * этом не заводится: тик публикуют те же циклы, что уже крутятся
-     * (`StatsReporter` в SRTLA, `UptimeTicker` в RTMP и WHIP).
+     * The separate flow is read only by the part of the UI that displays the
+     * clock, so only that part redraws. No second timer is created: the same
+     * loops already running publish the tick (`StatsReporter` in SRTLA,
+     * `UptimeTicker` in RTMP and WHIP).
      */
     val uptimeTick: StateFlow<Long>
 
-    /** Уровень микрофона по каналам, 0..1 — для индикатора на экране.
-     *  Отдельным потоком, как и тик часов: обновляется десятки раз в секунду
-     *  и не должен тащить за собой перерисовку всего экрана. */
+    /** Microphone level per channel, 0..1 — for the on-screen indicator.
+      *  Emitted on a separate flow, like the clock tick: updated dozens of times per second
+      *  and must not trigger a redraw of the whole screen. */
     val audioLevelLeft: StateFlow<Float>
     val audioLevelRight: StateFlow<Float>
 
-    /** Вход перегружен: пик упёрся в потолок. */
+    /** Input is overloaded: the peak hit the ceiling. */
     val audioClipping: StateFlow<Boolean>
     val isStreaming: Boolean
 
@@ -60,36 +60,36 @@ interface LiveStreamer {
      *  mirror front preview, tap-to-focus). Default no-op — only SrtlaStreamer
      *  implements this today. */
     fun configureCamera(defaults: CameraDefaults) = Unit
-    /** Общие настройки звука. Отдельным вызовом, а не через профиль: с 03.09
-     *  звук один на всё приложение, а не копия в каждом профиле. */
+    /** Shared audio settings. A separate call rather than part of the profile:
+     *  since 03.09, audio settings are app-wide, not duplicated in every profile. */
     fun configureAudio(audio: AudioSettings) = Unit
-    /** Писать ли эфир в MP4 параллельно вещанию. По умолчанию no-op — до 03.09
-     *  тумблер «Запись эфира» в настройках не был подключён ни к чему. */
+    /** Whether to record the live stream to MP4 alongside broadcasting. No-op
+     *  by default — until 03.09, the "Record stream" settings toggle did nothing. */
     fun setRecordStream(enabled: Boolean) = Unit
-    /** Писать ли CSV-журнал сессии (мощность, температура, транспорт) на
-     *  телефон. Реализовано только для SRTLA: журнал собирается из тех же
-     *  цифр, что и `BrixStat`, а те есть лишь на этом тракте. */
+    /** Whether to write a CSV session log (signal strength, temperature,
+     *  transport) to the phone. Implemented only for SRTLA: the log uses the
+     *  same metrics as `BrixStat`, which are available only on this path. */
     fun setDebugLog(enabled: Boolean) = Unit
-    /** Переключить предпочитаемый микрофон на лету (быстрая кнопка). */
+    /** Switch the preferred microphone on the fly (quick button). */
     fun setMicSource(source: MicSource, deviceName: String = "") = Unit
     fun start(url: String)
     fun stop()
     fun reconnect()
     fun switchCamera()
-    /** Перейти на конкретную сторону камеры (нужно сценам). */
+    /** Switch to a specific camera side (needed by scenes). */
     fun setCameraSide(side: CameraSide) = Unit
-    /** Заставка вместо камеры. @return false, если картинку не прочитать. */
+    /** Still image instead of the camera. @return false if the image cannot be read. */
     fun showStillImage(uri: android.net.Uri): Boolean = false
-    /** Экран телефона вместо камеры. @return false, если захват не начался. */
+    /** Phone screen instead of the camera. @return false if capture did not start. */
     fun showScreen(projection: android.media.projection.MediaProjection): Boolean = false
-    /** Вернуть камеру после заставки. */
+    /** Restore the camera after the still image. */
     fun showCamera() = Unit
     /**
-     * Откуда брать звук в этой сцене.
+     * Where to get audio for this scene.
      *
-     * [projection] нужен для всего, кроме [SceneAudio.MIC], и это тот же токен,
-     * что и для захвата экрана. @return false, если переключить не вышло —
-     * вызывающий обязан остаться на микрофоне, а не уйти в тишину.
+     * [projection] is needed for everything except [SceneAudio.MIC], and is the
+     * same token used for screen capture. @return false if switching failed —
+     * the caller must stay on the microphone rather than switch to silence.
      */
     fun setSceneAudio(
         mode: SceneAudio,
@@ -124,17 +124,17 @@ interface LiveStreamer {
      *  physical scale). */
     fun videoFrameSize(): Point?
 
-    /** Снимок текущего кадра — того, что видит зритель, вместе с оверлеями и
-     *  эффектами. Берётся из GL-цепочки, а не с камеры, поэтому это именно
-     *  кадр эфира, а не отдельный фотоснимок. [onResult] вызывается на
-     *  GL-потоке; null — если кадр взять не удалось. */
+    /** Snapshot of the current frame as seen by the viewer, including overlays
+     *  and effects. Captured from the GL pipeline, not the camera, so this is
+     *  the actual stream frame, not a separate photo. [onResult] is called on
+     *  the GL thread; null if the frame could not be captured. */
     fun takeSnapshot(onResult: (android.graphics.Bitmap?) -> Unit)
     /** Report whether a donation overlay's widget is currently connected to
      *  its alert server, aggregated (any-connected) into [StreamState.donationWidgetConnected]. */
     fun setOverlayConnectionState(overlayId: String, serviceId: String, connected: Boolean)
 
-    /** Виджета больше нет на экране: убрать его метку из HUD совсем, иначе она
-     *  висит погашенной до перезапуска приложения. */
+    /** The widget is no longer on screen: remove its HUD indicator entirely,
+     *  otherwise it stays dimmed until the app restarts. */
     fun forgetOverlayConnection(overlayId: String)
     /** Show a persistent, manually-updated overlay (e.g. a live browser
      *  widget snapshot) — unlike [showOverlay] this has no built-in

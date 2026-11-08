@@ -67,18 +67,18 @@ import kotlinx.coroutines.launch
 
 private enum class OnboardingStep { WELCOME, CUESCORE, PERMISSIONS, SERVER, QUALITY, DONE }
 
-// Свой список, а не общий из StreamScreen: там он приватный и разделён на
-// «обязательные» и «уведомления» ради ворот эфира. Здесь просим всё разом —
-// человек только что поставил приложение и ждёт этих вопросов.
+// Own list, not StreamScreen's: that private list separates required permissions
+// from notifications for stream gating. Request everything together here:
+// newly installed users expect these questions.
 private val ONBOARDING_PERMISSIONS: Array<String> = buildList {
     add(Manifest.permission.CAMERA)
     add(Manifest.permission.RECORD_AUDIO)
     if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
 }.toTypedArray()
 
-// Пояснение к каждому пресету — по индексу в defaultStreamPresets. Список
-// пресетов живёт в core и меняется редко; если он разойдётся с этим, у лишних
-// пресетов просто не будет пояснения.
+// Explanation for each preset by index in defaultStreamPresets. The preset list
+// lives in core and rarely changes; if the lists diverge, extra presets
+// simply have no explanation.
 private val PRESET_NOTES = listOf(
     R.string.onboarding_preset_720p30,
     R.string.onboarding_preset_720p60,
@@ -88,15 +88,15 @@ private val PRESET_NOTES = listOf(
 )
 
 /**
- * Мастер первого запуска (roadmap п. 9). Портретный — окно поворачивает
- * MainActivity, а экран эфира с камерой в это время не создан вовсе.
+ * First-run wizard (roadmap item 9). Portrait: MainActivity rotates the window,
+ * while the camera streaming screen has not been created at all.
  *
- * Черновик держится в rememberSaveable и пишется в настройки одним вызовом в
- * конце ([SettingsViewModel.completeOnboarding]). Смена языка на втором шаге
- * пересоздаёт Activity — шаг и введённое переживают это как поворот.
+ * Draft stays in rememberSaveable and writes settings in one final call
+ * ([SettingsViewModel.completeOnboarding]). Changing language on step two
+ * recreates Activity; the step and entered values survive as with rotation.
  *
- * Маскота и названия здесь нет намеренно: владелец (16.09) счёл их лишними —
- * заставка только что показала и то и другое.
+ * Mascot and name deliberately omitted: the owner (16.09) found them redundant
+ * because the intro had just shown both.
  */
 @Composable
 fun OnboardingScreen(viewModel: SettingsViewModel) {
@@ -116,8 +116,8 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
     var cueScoreLookupMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var cueScoreLookupInProgress by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-    // По умолчанию — то, что уже стоит в профиле, чтобы «Далее» без выбора
-    // ничего не меняло.
+    // Default to the existing profile value so Next without a selection
+    // changes nothing.
     val currentVideo = settings.selectedStreamProfile()?.video
     var presetIndex by rememberSaveable {
         mutableIntStateOf(
@@ -134,8 +134,8 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
     ) { permissionTick++ }
 
     val serverFilled = serverUrl.isNotBlank()
-    // Разобранная ссылка ждёт подтверждения — как в «Импорт/экспорт»: молча
-    // чужие серверы не применяем.
+    // Parsed link awaits confirmation, as in Import/export: do not silently
+    // apply someone else's servers.
     var pendingImport by remember { mutableStateOf<SharedConfig?>(null) }
 
     fun finish() {
@@ -165,8 +165,8 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
             .safeDrawingPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
-        // Шапка: номер шага и «пропустить всё». Пропуск тоже ставит признак
-        // «пройден» — иначе мастер встречал бы человека при каждом запуске.
+        // Header: step number and Skip all. Skipping also marks completion,
+        // otherwise the wizard would greet users on every launch.
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
@@ -278,7 +278,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                 OnboardingStep.PERMISSIONS -> {
                     StepTitle(stringResource(R.string.onboarding_permissions_title))
                     StepText(stringResource(R.string.onboarding_permissions_text))
-                    // Тик заставляет перечитать статусы после ответа системы.
+                    // Tick forces permission statuses to refresh after the system response.
                     val statuses = remember(permissionTick) { ONBOARDING_PERMISSIONS.associateWith(::granted) }
                     BrixCard {
                         statuses.forEach { (perm, ok) -> PermissionRow(perm, ok) }
@@ -314,9 +314,9 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        // Подсказка отдельным текстом, а не supportingText поля:
-                        // у поля свои внутренние отступы, и подсказка выходила
-                        // заметно уже остального текста на экране.
+                        // Hint as separate text, not the field's supportingText:
+                        // internal field padding made it noticeably narrower
+                        // than the rest of the screen text.
                         if (serverType == ServerType.SRTLA) {
                             FieldHint(stringResource(R.string.field_url_hint_srtla))
                         }
@@ -333,7 +333,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                                         ),
                                     )
                                 },
-                                // Как в редакторе сервера: ключ — доступ к каналу.
+                                // As in the server editor: the key grants access to the channel.
                                 visualTransformation = if (keyVisible) {
                                     VisualTransformation.None
                                 } else {
@@ -392,8 +392,8 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
         }
 
         Spacer(Modifier.height(12.dp))
-        // Подписи в одну строку: «Пропустить шаг» в две строки делал кнопку
-        // выше, и «Назад» рядом подпрыгивал.
+        // Single-line labels: wrapping Skip step made its button taller,
+        // causing the adjacent Back button to jump.
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             if (stepIndex > 0) {
                 OutlinedButton(shape = BrixButtonShape, onClick = { stepIndex-- }, modifier = Modifier.weight(1f)) {
@@ -430,8 +430,8 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
             confirmLabel = stringResource(R.string.btn_import),
             onConfirm = {
                 pendingImport = null
-                // Привезённое уже содержит и сервер, и качество — дальнейшие
-                // шаги их только перетёрли бы, поэтому мастер на этом кончается.
+                // Imported settings already contain server and quality;
+                // later steps would overwrite them, so finish the wizard here.
                 viewModel.completeOnboardingWithImport(config, verifiedCueScorePlayerId)
             },
         ) {
@@ -493,9 +493,9 @@ private fun FieldHint(text: String) {
 }
 
 /**
- * Плитка пресета качества. Своя, а не BrixNavRow: у той стрелка «перейти»,
- * а здесь выбор, и её подсветка нажатия обрезалась внутренним отступом
- * карточки. Плитка кликабельна целиком, подсветка доходит до краёв.
+ * Quality preset tile. Custom rather than BrixNavRow, whose arrow indicates
+ * navigation rather than selection and whose press highlight was clipped by
+ * card padding. The entire tile is clickable, with an edge-to-edge highlight.
  */
 @Composable
 private fun PresetTile(preset: StreamPreset, note: String?, selected: Boolean, onClick: () -> Unit) {
@@ -534,8 +534,8 @@ private fun PresetTile(preset: StreamPreset, note: String?, selected: Boolean, o
     }
 }
 
-/** «720p@30», «4K@30». Имя пресета из core («720p30 · 2.5M») для людей не
- *  годится: владелец прочитал «2.5M» как метры. */
+/** "720p@30", "4K@30". Core preset names ("720p30 · 2.5M") are unsuitable
+ *  for users: the owner read "2.5M" as meters. */
 private fun presetTitle(p: StreamPreset): String {
     val res = if (p.height >= 2160) "4K" else "${p.height}p"
     return "$res@${p.fps}"
@@ -586,8 +586,8 @@ private fun ImportCard(onImported: (SharedConfig) -> Unit) {
                 label = { Text(stringResource(R.string.config_field_link)) },
                 placeholder = { Text("brix:// · moblin:// · larix://", maxLines = 1) },
                 isError = invalid,
-                // Вставка — иконкой в самом поле: отдельной кнопкой рядом с
-                // «Импортировать» обе не помещались, и подписи ломались.
+                // Paste as an in-field icon: a separate button beside Import
+                // did not fit and broke the labels.
                 trailingIcon = {
                     IconButton(onClick = {
                         val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)

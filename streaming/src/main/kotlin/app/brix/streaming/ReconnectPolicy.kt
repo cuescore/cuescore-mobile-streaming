@@ -10,12 +10,12 @@ package app.brix.streaming
 class ReconnectPolicy(
     private val delaysMs: List<Long> = listOf(1_000L, 2_000L, 5_000L, 10_000L, 30_000L),
 ) {
-    // Счётчик трогают три потока: start()/reconnect() под монитором
-    // SrtlaStreamer, onConnectionSuccess() из транспортного колбэка вообще без
-    // монитора, и nextDelayMs() из IO-корутины scheduleReconnect. Общего лока у
-    // них нет, а `attempt++` — это чтение-изменение-запись. Отсюда пропущенная
-    // или задвоенная ступень бэкоффа и расхождение с StreamState.reconnectAttempt.
-    // Класс крошечный и не на горячем пути, поэтому просто монитор на всё.
+    // Three threads touch this counter: start()/reconnect() under SrtlaStreamer's
+    // monitor, onConnectionSuccess() from a transport callback without a monitor,
+    // and nextDelayMs() from scheduleReconnect's IO coroutine. No shared lock,
+    // while `attempt++` is read-modify-write, causing missed or duplicate
+    // backoff steps and divergence from StreamState.reconnectAttempt.
+    // This tiny class is not on a hot path, so use a monitor for everything.
     private var attempt = 0
 
     @get:Synchronized

@@ -36,19 +36,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 
 private val BrixShape = RoundedCornerShape(4.dp)
 
-/** Минимальная высота строки настроек. 48 dp — рекомендация Android по области
- *  нажатия; у нас строки были около 38 dp, и попасть в них на ходу тяжело
- *  (аудит 17.09). Отступ уменьшен с 9 до 6 dp, чтобы строки с подписью не
- *  выросли: там высоту задаёт содержимое, а не минимум. */
+/** Minimum settings-row height. 48 dp is Android's recommended touch-target size;
+ *  our rows were about 38 dp, making them hard to tap while moving (audit 17.09).
+ *  Padding was reduced from 9 to 6 dp so rows with subtitles do not grow: their
+ *  height is determined by the content, not the minimum. */
 private val ROW_MIN_HEIGHT = 48.dp
 private val BrixRowShape = RoundedCornerShape(8.dp)
 
 internal val BrixButtonShape = RoundedCornerShape(4.dp)
 
-/* Моноширинный шрифт остался там, где он работает: значения справа в строке,
- * подписи сегментов, рельса категорий, отчёты и коды. Названия настроек с
- * 20.09 пишутся обычным шрифтом — моноширинный читается заметно медленнее, а
- * текста в настройках много (владелец, 20.09). */
+/* The monospaced font remains where it works well: values on the right side of a row,
+ * segment labels, the category rail, reports, and codes. Since 20.09, setting names
+ * use a regular font—the monospaced font is noticeably slower to read, and settings
+ * contain a lot of text (the owner, 20.09). */
 
 @Composable
 fun BrixCard(
@@ -133,8 +133,8 @@ fun BrixToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = ROW_MIN_HEIGHT)
-            // Вся строка, а не только переключатель: попасть пальцем в него на
-            // ходу тяжело, а строка — цель во всю ширину экрана.
+            // The whole row, not just the switch: the switch is hard to tap while moving,
+            // whereas the row is a target spanning the full screen width.
             .clickable { onCheckedChange(!checked) }
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -159,14 +159,14 @@ fun BrixToggleRow(
 }
 
 /**
- * Переключатель настроек — системный `Switch`, уменьшенный до 80%.
+ * Settings switch—the system `Switch`, scaled down to 80%.
  *
- * Раньше здесь был свой прямоугольник 36×20 с кружком: без движения при
- * переключении и почти сливающийся с фоном в выключенном состоянии. Хуже того,
- * он был не единственным — на экране приоритетов каналов стоял настоящий
- * Material Switch, и в одном меню жили два разных переключателя (владелец,
- * 20.09: берём системный). Масштаб 0.8 — потому что штатные 52×32 в альбомном
- * экране слишком крупные; область нажатия остаётся у всей строки.
+ * Previously this was a custom 36×20 rectangle with a dot: it did not move when
+ * toggled and almost blended into the background when off. Worse, it was not the
+ * only one—the channel-priority screen used a real Material Switch, so one menu
+ * had two different switches (the owner, 20.09: use the system one). Scale 0.8
+ * because the standard 52×32 is too large in landscape; the whole row remains
+ * the touch target.
  */
 @Composable
 fun BrixToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -243,14 +243,14 @@ fun <T> BrixSegmentRow(
 }
 
 /**
- * Компактный диалог вместо `AlertDialog`.
+ * Compact dialog instead of `AlertDialog`.
  *
- * У материального диалога поля 24 dp по кругу плюс свои промежутки между
- * заголовком, текстом и кнопками. На телефоне, который в эфире держат
- * горизонтально, это съедает почти всю доступную высоту: содержимого на две
- * строки, а окно во весь экран (владелец, 15.09 — «гигантские поля, непонятно
- * нахрена сделанные»). Здесь поля 16 dp, промежутки 8, ширина ограничена —
- * рамка обнимает содержимое, а не наоборот.
+ * The Material dialog has 24 dp of padding on all sides, plus its own spacing
+ * between the title, text, and buttons. On a phone held horizontally during a
+ * live stream, this consumes almost all available height: two lines of content
+ * in a full-screen window (the owner, 15.09: “huge padding, unclear what it's
+ * even for”). Here the padding is 16 dp, spacing is 8, and width is constrained—
+ * the frame hugs the content, not the other way around.
  */
 @Composable
 fun BrixDialog(
@@ -260,7 +260,7 @@ fun BrixDialog(
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
     dismissLabel: String? = null,
-    /** Опасное действие — красная кнопка подтверждения. */
+    /** Destructive action—the red confirmation button. */
     destructive: Boolean = false,
     content: @Composable ColumnScope.() -> Unit = {},
 ) {
@@ -280,9 +280,9 @@ fun BrixDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
-                    // У TextButton своя минимальная высота 40 dp и поля 24 dp
-                    // по бокам — на два слова это половина диалога. Ужимаем до
-                    // размера, который всё ещё уверенно попадается пальцем.
+                    // TextButton has its own 40 dp minimum height and 24 dp side padding—
+                    // for two words, that takes up half the dialog. Shrink it to a size
+                    // that is still easy to tap.
                     val tight = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     if (dismissLabel != null) {
                         androidx.compose.material3.TextButton(

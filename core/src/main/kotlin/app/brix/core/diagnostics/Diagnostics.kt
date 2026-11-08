@@ -52,12 +52,12 @@ object Diagnostics {
     }
 
     /**
-     * Кладёт готовый текст в файл и отдаёт `Uri` для `ACTION_SEND`.
+     * Writes the prepared text to a file and returns a `Uri` for `ACTION_SEND`.
      *
-     * Нужен там, где отчёт собирает не этот модуль: паспорт устройства живёт в
-     * `streaming` (ему нужен доступ к камерам и кодекам), а `core` про него не
-     * знает и знать не должен. Общее у них — только «записать и поделиться»,
-     * и повторять здесь `FileProvider` с его authority в третий раз незачем.
+     * Needed when the report is assembled outside this module: the device profile lives in
+     * `streaming` (it needs access to cameras and codecs), while `core` does not
+     * know about it and should not. The only thing they share is “write and share,”
+     * so there is no need to duplicate `FileProvider` and its authority here for a third time.
      */
     fun exportText(context: Context, prefix: String, text: String): Uri {
         val dir = File(context.getExternalFilesDir(null), "diagnostics").also { it.mkdirs() }
@@ -66,7 +66,7 @@ object Diagnostics {
         return FileProvider.getUriForFile(context, AUTHORITY, file)
     }
 
-    /** Файлы записи сессий (`SessionRecorder`), новые первыми. */
+    /** Session recording files (`SessionRecorder`), newest first. */
     fun listSessionLogs(context: Context): List<File> {
         val dir = File(context.getExternalFilesDir(null), "debug")
         return dir.listFiles { f -> f.isFile && f.name.endsWith(".csv") }
@@ -74,48 +74,48 @@ object Diagnostics {
             .orEmpty()
     }
 
-    /** Самая свежая запись сессии, готовая к отправке. `null`, если записей нет. */
+    /** The most recent session recording, ready to send. `null` if there are no recordings. */
     fun exportLatestSessionLog(context: Context): Uri? {
         val file = listSessionLogs(context).firstOrNull() ?: return null
         return FileProvider.getUriForFile(context, AUTHORITY, file)
     }
 
     /**
-     * Настройки для выгрузки: только то, что влияет на ПОВЕДЕНИЕ.
+     * Settings for export: only what affects BEHAVIOR.
      *
-     * **Почему не «вырезать секреты», а «оставить нужное».** Первая версия
-     * прятала одно поле `passphrase` — единственное, которое заведомо всегда
-     * было пустым, потому что задать его из приложения было нельзя. Всё
-     * остальное уезжало открытым: ключ трансляции (у RTMP он в пути `baseUrl`,
-     * у SRTLA в `streamId`), адрес личного сервера, имена каналов на Twitch,
-     * Kick и VK — то есть имя стримера, — и `url` донат-оверлея, а это токен
-     * виджета DonationAlerts.
+     * **Why “keep what is needed” rather than “remove secrets.”** The first version
+     * hid one field, `passphrase`—the only one that was certain to always
+     * be empty because it could not be set from the app. Everything
+     * else was exported in the clear: the stream key (in RTMP, it is in the `baseUrl` path,
+     * in SRTLA, in `streamId`), the private server address, Twitch channel names,
+     * Kick, and VK—in other words, the streamer's name—and the donation overlay `url`, which is a token
+     * for a DonationAlerts widget.
      *
-     * Список «что убрать» нужно поддерживать, и он молча отстаёт от модели:
-     * каждое новое поле по умолчанию оказывается в выгрузке. Список «что
-     * оставить» ошибается в другую сторону — новое поле по умолчанию НЕ
-     * уезжает, и цена ошибки всего лишь «в отчёте чего-то не хватает».
+     * A “what to remove” list needs maintenance and silently falls behind the model:
+     * every new field is included in the export by default. A “what to
+     * keep” list errs in the other direction—a new field is NOT included by default,
+     * and the cost of a mistake is merely “something is missing from the report.”
      *
-     * Отчёт читают чужие люди. Для разбора жалобы на транспорт нужен тип
-     * сервера и его числовые настройки, а не адрес: если адрес понадобится,
-     * его можно спросить.
+     * Other people read the report. To investigate a transport issue, they need the server
+     * type and its numeric settings, not the address: if the address is needed,
+     * it can be requested.
      */
     internal fun redactedJson(settings: AppSettings): String {
-        // ВАЖНО: собираем НОВЫЙ объект, а не settings.copy(). copy() — это
-        // блок-лист: перечисляешь плохие поля, а всё остальное едет как есть.
-        // Он уже подвёл 14.09 — мимо вырезания проехал `overlayUrl`, старое
-        // поле для миграции, а в нём токен виджета DonationAlerts. Здесь
-        // каждое поле названо явно, поэтому новое поле модели по умолчанию
-        // в отчёт НЕ попадает, и цена ошибки — «чего-то не хватает».
-        // Устаревший звук профиля обнуляем: kotlinx умолчания не пишет, и поле
-        // с именем гарнитуры в отчёт не попадает (аудит 23.09).
+        // IMPORTANT: build a NEW object, not settings.copy(). copy() is a
+        // blocklist: you list the bad fields, and everything else goes through as-is.
+        // It already failed us on 14.09—`overlayUrl` slipped past the removal, an old
+        // migration field containing the DonationAlerts widget token. Here,
+        // each field is explicitly named, so a new model field is excluded from
+        // the report, making the cost of a mistake "something is missing".
+        // Reset obsolete profile audio: kotlinx does not write default values, and the field
+        // with the headset name is not included in the report (audit 23.09).
         @Suppress("DEPRECATION")
         val profilesWithoutLegacyAudio = settings.streamProfiles.map { it.copy(audio = app.brix.core.AudioSettings()) }
         val safe = AppSettings(
-            // Звук с 16.09 общий — AppSettings.audio, а в StreamProfile.audio
-            // осталось устаревшее поле для миграции (запись здесь раньше
-            // утверждала обратное). Общий звук берём без имени устройства:
-            // в нём бывает имя владельца гарнитуры («Dima's Buds»).
+            // Audio has been global since 16.09—AppSettings.audio—while StreamProfile.audio
+            // retains an obsolete migration field (this comment previously
+            // claimed the opposite). We take global audio without the device name:
+            // it may contain the headset owner's name (“Dima's Buds”).
             audio = settings.audio.copy(micDeviceName = ""),
             cameraDefaults = settings.cameraDefaults,
             appearance = settings.appearance,
@@ -126,8 +126,8 @@ object Diagnostics {
             selectedSceneId = settings.selectedSceneId,
             streamProfiles = profilesWithoutLegacyAudio,
             customPresets = settings.customPresets,
-            // Оставляем то, от чего зависит транспорт: тип, задержка,
-            // принудительный IPv4, включён ли профиль. Адрес и ключ — нет.
+            // Keep what transport depends on: type, latency,
+            // forced IPv4, and whether the profile is enabled. Not the address or key.
             serverProfiles = settings.serverProfiles.map {
                 ServerProfile(
                     id = it.id,
@@ -148,16 +148,16 @@ object Diagnostics {
                 vkClientId = "",
                 vkClientSecret = "",
             ),
-            // У донат-алерта в url — токен виджета DonationAlerts, у веб-виджета
-            // произвольная страница владельца, у картинки путь к файлу на его
-            // телефоне, а в тексте — то, что он написал сам. Тип, геометрия и
-            // звук остаются: именно они объясняют нагрузку на кадр.
+            // The donation alert's url contains a DonationAlerts widget token; the web widget contains
+            // an arbitrary page belonging to the owner; the image contains a file path on their
+            // phone; and the text contains what they wrote themselves. Type, geometry, and
+            // audio are retained: they are what explain the per-frame load.
             widgets = settings.widgets.map { it.copy(url = "", imageUri = "", template = "", name = "") },
-            // Имя сцены человек пишет сам, а imageUri — путь к файлу на его
-            // телефоне, обычно с именем пользователя внутри.
+            // The user enters the scene name, and imageUri is a file path on their
+            // phone, usually containing their username.
             scenes = settings.scenes.map { it.copy(name = "", imageUri = "") },
-            // Поля overlay* с пометкой @Deprecated не перечислены намеренно:
-            // они остаются со значениями по умолчанию и наружу не едут.
+            // Fields overlay* marked @Deprecated are intentionally not listed:
+            // they retain their default values and are not exported.
         )
         return runCatching { Json.encodeToString(safe) }.getOrDefault("<serialization failed>")
     }

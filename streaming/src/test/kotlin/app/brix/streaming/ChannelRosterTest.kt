@@ -5,13 +5,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** Выбор каналов при появлении и пропаже сетей — без телефона. */
+/** Link selection as networks appear and disappear, without a phone. */
 class ChannelRosterTest {
 
     @Test
     fun `plain SRT moves to the standby network when its only channel is lost`() {
-        // Аудит 23.09: эфир на Wi-Fi, сота отброшена «канал уже есть» и забыта;
-        // ушёл с Wi-Fi — пять попыток на пустом списке и Failed.
+        // Audit 23.09: streaming over Wi-Fi discarded cellular as "link already
+        // exists"; leaving Wi-Fi meant five attempts with an empty list and Failed.
         val r = ChannelRoster<String>()
         assertEquals(Decision.ADD, r.onAvailable("wifi#1", "wifi", 8, sessionActive = true, plainSrt = true, channelCount = 0))
         assertEquals(Decision.STANDBY, r.onAvailable("cell#1", "cellular", 2, sessionActive = true, plainSrt = true, channelCount = 1))

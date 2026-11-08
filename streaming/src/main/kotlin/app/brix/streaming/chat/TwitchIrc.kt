@@ -20,14 +20,14 @@ sealed class TwitchIrcEvent {
         val displayName: String,
         val colorHex: String?,
         val text: String,
-        /** Тег `emotes` как есть — разбирает [EmoteParts.twitch]. */
+        /** The `emotes` tag as-is — parsed by [EmoteParts.twitch]. */
         val emotesTag: String? = null,
-        /** Числовой id канала — нужен 7TV и BTTV. */
+        /** Numeric channel ID — needed by 7TV and BTTV. */
         val roomId: String? = null,
     ) : TwitchIrcEvent()
 
-    /** Приходит сразу после JOIN и несёт `room-id` — id канала узнаём до
-     *  первого сообщения, а не когда кто-то напишет. */
+    /** Arrives immediately after JOIN and carries `room-id` — learn the channel
+     *  ID before the first message, not only after someone speaks. */
     data class RoomState(val roomId: String) : TwitchIrcEvent()
 
     data object Other : TwitchIrcEvent()

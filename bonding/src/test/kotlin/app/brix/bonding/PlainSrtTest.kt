@@ -7,21 +7,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Обычный SRT — режим без SRTLA, который включается схемой `srt://`.
+ * Plain SRT: mode without SRTLA, selected by the `srt://` scheme.
  *
- * Проверяется против поддельного приёмника, который ведёт себя как настоящий
- * `srt-live-transmit` или вход SRT в OBS: пакеты SRTLA молча отбрасывает и
- * отвечает только на рукопожатие SRT. Если клиент попробует зарегистрироваться
- * или пошлёт keepalive SRTLA, ответа не будет — и тест это поймает.
+ * Tested against a fake receiver behaving like real `srt-live-transmit` or OBS
+ * SRT input: silently discards SRTLA packets and answers only SRT handshakes.
+ * Client registration or SRTLA keepalives receive no response, which the
+ * test detects.
  */
 class PlainSrtTest {
 
 
-    /** Пакет данных SRT с заданным номером. Клиент сам данных не создаёт — их
-     *  подаёт поток сверху, поэтому в тестах подаём их руками. */
+    /** SRT data packet with a given sequence number. The client does not create
+         *  data; the stream above supplies it, so tests inject it manually. */
     private fun dataPacket(sn: Long): ByteArray {
         val p = ByteArray(64)
-        writeUInt32(p, 0, sn) // старший бит нулевой = пакет данных
+        writeUInt32(p, 0, sn) // Zero high bit means a data packet
         return p
     }
 
@@ -61,11 +61,11 @@ class PlainSrtTest {
             client.start("127.0.0.1", fake.port)
             assertTrue(ready.await(5, TimeUnit.SECONDS))
 
-            // Данные подаём сами: без них клиент молчит, и тест прошёл бы
-            // впустую — «пакетов SRTLA нет» при полном отсутствии трафика.
+            // Inject data: without it the client stays silent and the test
+            // would pass vacuously, finding no SRTLA packets with no traffic at all.
             repeat(20) { client.handleLocalPacket(dataPacket(it.toLong())) }
-            // Больше двух секунд: keepalive SRTLA идёт раз в секунду, так что
-            // за это окно он успел бы уйти дважды, если бы режим не работал.
+            // Over two seconds: SRTLA keepalive runs once a second, so two
+            // could be sent in this window if the mode were broken.
             Thread.sleep(2500)
             assertTrue(
                 "приёмник не получил вообще ничего — тест ничего не доказывает",
@@ -88,10 +88,9 @@ class PlainSrtTest {
 
     @Test
     fun `против настоящего SRTLA-приёмника простой режим не проходит регистрацию`() {
-        // Обратная проверка: приёмник SRTLA ждёт REG1, а простой клиент его не
-        // шлёт. Клиент при этом считает себя готовым — и это верно, потому что
-        // рукопожатие SRT ему отвечают. Смысл теста в том, что регистрации
-        // действительно не было.
+        // Inverse check: the SRTLA receiver expects REG1, which the plain client
+        // never sends. The client correctly considers itself ready because
+        // SRT handshakes are answered. Verify registration truly did not occur.
         val fake = FakeSrtlaRec()
         fake.start()
         try {
@@ -114,10 +113,9 @@ class PlainSrtTest {
 
     @Test
     fun `в простом режиме поток идёт по одному линку, а не по двум`() {
-        // SRTLA размазывает пакеты по каналам намеренно: сервер их склеивает.
-        // У обычного SRT такой стороны нет, и пакеты со второго сокета он
-        // видит как чужие. Полевой прогон 14.09 показал именно это: поток
-        // пошёл сразу по Wi-Fi и соте.
+        // SRTLA deliberately spreads packets across links for server reassembly.
+        // Plain SRT has no such layer and sees second-socket packets as unrelated.
+        // Field run 14.09 showed exactly this: simultaneous Wi-Fi and cellular traffic.
         val fake = FakeSrtlaRec(plainSrt = true)
         fake.start()
         try {
@@ -127,15 +125,14 @@ class PlainSrtTest {
             client.addConnection("cellular", 1f)
             client.start("127.0.0.1", fake.port)
             assertTrue(ready.await(5, TimeUnit.SECONDS))
-            // Второму линку надо дать подняться, иначе тест доказал бы лишь
-            // то, что он ещё не готов.
+            // Let the second link connect, otherwise the test proves only
+            // that it is not ready yet.
             Thread.sleep(800)
             repeat(50) { client.handleLocalPacket(dataPacket(it.toLong())) }
             Thread.sleep(500)
 
-            // Сервер видит пакеты с разных исходящих портов, если линков больше
-            // одного. Для обычного SRT их должно быть ровно столько же, сколько
-            // и сессий — одна.
+            // Multiple links produce packets from different source ports.
+            // Plain SRT must have exactly as many source ports as sessions: one.
             val ports = fake.receivedSourcePorts()
             assertEquals("поток ушёл по нескольким линкам: $ports", 1, ports.size)
             client.stop()

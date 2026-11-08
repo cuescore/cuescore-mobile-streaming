@@ -75,9 +75,9 @@ class MoblinkServer(
         send(conn, MessageToRelay.Hello(MOBLINK_API_VERSION, MoblinkAuthentication(state.challenge, state.salt)))
     }
 
-    /** Имя и причина приходят от собеседника: обрезаем и выкидываем
-     *  управляющие символы, иначе перевод строки в имени подделывал бы
-     *  соседние строки лога в выгрузке диагностики. */
+    /** Name and reason come from the peer: truncate and remove control
+     *  characters, otherwise a newline in a name could forge adjacent
+     *  log lines in the diagnostics export. */
     private fun safe(raw: String): String = raw.take(30).filter { !it.isISOControl() }
 
     override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
@@ -94,8 +94,8 @@ class MoblinkServer(
         when (val parsed = MessageToStreamer.fromJson(message)) {
             is MessageToStreamer.Identify -> handleIdentify(conn, state, parsed)
             is MessageToStreamer.Response -> handleResponse(conn, state, parsed)
-            // Сам текст не пишем: до аутентификации его шлёт кто угодно из
-            // локальной сети, а тег Moblink уезжает в диагностику (аудит 23.09).
+            // Do not log the text: anyone on the local network can send it
+            // before authentication, and Moblink appears in diagnostics (audit 23.09).
             null -> Log.w(TAG, "moblink: failed to parse message from ${safe(state.name).ifEmpty { "?" }} len=${message.length}")
         }
     }
@@ -138,7 +138,7 @@ class MoblinkServer(
             is MoblinkResponseData.StartTunnel -> {
                 if (msg.id != state.pendingStartTunnelId) return
                 val host = conn.getRemoteSocketAddress()?.address?.hostAddress ?: return
-                // Без адреса туннеля: тег в белом списке диагностики.
+                // Omit the tunnel address: this tag is allowlisted in diagnostics.
                 Log.i(TAG, "moblink: tunnel ready ${safe(state.name)} port=${data.port}")
                 listener?.onRelayTunnelReady(state.relayId, state.name, host, data.port)
             }

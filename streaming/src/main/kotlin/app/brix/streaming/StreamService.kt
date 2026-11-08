@@ -30,25 +30,25 @@ class StreamService : Service() {
         const val ACTION_MUTE = "app.brix.streaming.action.MUTE"
 
         /**
-         * Разрешить службе захват экрана.
+         * Allow the service to capture the screen.
          *
-         * На Android 14+ поднимать службу с типом mediaProjection можно ТОЛЬКО
-         * после того, как пользователь дал согласие на захват. Поэтому тип
-         * добавляется отдельным шагом: сначала согласие, потом эта команда,
-         * и лишь затем создаётся виртуальный дисплей.
+         * On Android 14+, a service with the mediaProjection type can be started ONLY
+         * after the user has consented to capture. Therefore, the type is added in a
+         * separate step: first consent, then this command,
+         * and only then is the virtual display created.
          */
         const val ACTION_ALLOW_SCREEN = "app.brix.streaming.action.ALLOW_SCREEN"
 
-        /** Захват экрана закончился — снять тип со службы. */
+        /** Screen capture ended — remove its type from the service. */
         const val ACTION_REVOKE_SCREEN = "app.brix.streaming.action.REVOKE_SCREEN"
 
         /**
-         * Остановить захват экрана, не трогая эфир.
+         * Stop screen capture without stopping the live stream.
          *
-         * Живёт в уведомлении, потому что сцену с экраном включают ради того,
-         * чтобы приложение свернуть, — а свёрнутое приложение своей кнопки не
-         * покажет. Системный значок захвата на эту роль не годится: он в
-         * строке состояния, которую полноэкранный эфир прячет.
+         * This lives in the notification because a screen scene is enabled so that
+         * the app can be minimized — and a minimized app cannot show its own button.
+         * The system capture icon is not suitable for this: it is in the status bar,
+         * which a full-screen live stream hides.
          */
         const val ACTION_STOP_SCREEN = "app.brix.streaming.action.STOP_SCREEN"
 
@@ -63,8 +63,8 @@ class StreamService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    /** Что сейчас показано в уведомлении: текст плюс то, от чего зависят
-     *  кнопки (подпись мьюта, кнопка остановки захвата экрана). */
+    /** What is currently shown in the notification: text and the state that the
+     *  buttons depend on (mute label, screen-capture stop button). */
     private var lastNotifiedKey: String? = null
 
     private fun notificationKey(text: String): String =
@@ -100,39 +100,39 @@ class StreamService : Service() {
     }
 
     /**
-     * Разрешил ли пользователь захват экрана в этом запуске.
+     * Whether the user has allowed screen capture in this run.
      *
-     * Флаг нужен, потому что тип службы задаётся ЦЕЛИКОМ при каждом
-     * `startForeground`, а не добавляется. Любая следующая команда — «мьют»,
-     * «переподключить», просто повторный старт — переобъявила бы типы, и без
-     * этого флага mediaProjection из набора бы выпал, а вместе с ним оборвался
-     * бы и захват экрана посреди эфира.
+     * The flag is needed because the service type is set as a WHOLE with each
+     * `startForeground` call; it is not appended. Any subsequent command — “mute”,
+     * “reconnect”, or even a repeated start — would redeclare the types, and without
+     * this flag, mediaProjection would drop out of the set, ending screen capture
+     * in the middle of the live stream.
      */
     @Volatile
     private var screenAllowed = false
 
     /**
-     * Служба уже поднята на переднем плане.
+     * The service is already running in the foreground.
      *
-     * Повторный `startForeground` из фона система отвергает: «Foreground
+     * The system rejects a repeated `startForeground` call from the background:
      * service started from background can not have location/camera/microphone
-     * access». Поймано 05.09 — команда, пришедшая по кнопке уведомления, шла
-     * из фона, объявление типов отвергалось трижды подряд, и через минуту
-     * служба была остановлена как простаивающая, вместе с эфиром. Поэтому
-     * повторно объявляем типы только там, где это действительно нужно, а
-     * текст уведомления обновляем через notify().
+     * access". Observed 05.09: a command sent from a notification button
+     * came from the background, type redeclaration was rejected
+     * three times in a row, and after a minute the service was stopped as idle,
+     * along with the live stream. So we redeclare types only where necessary, and
+     * update the notification text through notify().
      */
     @Volatile
     private var inForeground = false
 
     /**
-     * Типы службы, объявляемые ЯВНО.
+     * Service types, declared EXPLICITLY.
      *
-     * Двухаргументный `startForeground` берёт объединение всех типов из
-     * манифеста, а там с 04.09 объявлен и mediaProjection. На Android 14+ этот
-     * тип без выданного согласия запрещён, то есть двухаргументная форма
-     * ставила под SecurityException КАЖДЫЙ старт эфира, а не только захват
-     * экрана. Поэтому набор собирается здесь и всегда передаётся явно.
+     * The two-argument `startForeground` takes the union of all types in the
+     * manifest, which has included mediaProjection since 04.09. On Android 14+,
+     * this type is forbidden without user consent, so the two-argument form caused
+     * a SecurityException on EVERY live-stream start, not just screen capture.
+     * Therefore, the set is assembled here and always passed explicitly.
      */
     private fun foregroundTypes(): Int =
         android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
@@ -140,23 +140,23 @@ class StreamService : Service() {
             if (screenAllowed) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0
 
     /**
-     * Поднять службу на переднем плане с текущим набором типов.
+     * Start the service in the foreground with the current set of types.
      *
-     * **Отказ бывает двух разных видов, и раньше они обрабатывались одинаково.**
+     * **There are two different failure types, previously handled identically.**
      *
-     * 1. **Первый подъём не удался** — службы на переднем плане нет вовсе. Эфир идёт
-     *    без всякой гарантии: система вправе прибить процесс в любой момент, а
-     *    человек узнает об этом по оборванной трансляции. Это настоящая беда, и
-     *    молчать о ней нельзя.
-     * 2. **Переобъявление типов отвергнуто** — служба уже на переднем плане, просто
-     *    команда пришла из фона, и система такие запросы отклоняет намеренно
+     * 1. **The initial start failed** — the service is not in the foreground at all.
+     *    The live stream continues with no guarantees: the system can kill the process
+     *    at any time, and the user will find out when the broadcast cuts out. This is
+     *    a real problem, and it must not go unreported.
+     * 2. **Type redeclaration was rejected** — the service is already in the foreground;
+     *    the command simply came from the background, and the system deliberately rejects
      *    («Foreground service started from background can not have
-     *    location/camera/microphone access», поймано 05.09 на кнопке уведомления).
-     *    Здесь терять нечего: набор типов остаётся прежним, эфир продолжается.
+     *    such requests (“location/camera/microphone access”; reproduced on 05.09 via a
+     *    notification button). Nothing is lost here: the type set stays unchanged, and
      *
-     * Процесс не роняем ни в одном из случаев — обрывать живой эфир хуже, чем идти
-     * без гарантии. Но в логе эти два случая теперь различимы, и при первом стоит
-     * метка, по которой его видно в выгрузке диагностики.
+     *    the live stream continues.
+     * We do not crash the process in either case — cutting off a live stream is worse
+     * than running without a guarantee. The two cases are now distinguishable in the
      */
     private fun startForegroundSafely(text: String) {
         val wasForeground = inForeground
@@ -208,11 +208,11 @@ class StreamService : Service() {
                         state.status == StreamStatus.Idle -> getString(R.string.notif_interrupted)
                         else -> getString(R.string.notif_streaming_title)
                     }
-                    // Только при смене текста. Состояние меняется раз в секунду
-                    // (статистика) и до 5 раз/с при работе ABR, а видимый текст —
-                    // лишь при смене статуса. Раньше каждое обновление
-                    // пересобирало уведомление и шло binder-вызовом в
-                    // system_server — весь эфир (аудит 23.09).
+                    // Only when the text changes. State changes once per second
+                    // (statistics) and up to 5 times/sec during ABR, but the visible text changes
+                    // only when the status changes. Previously, every update
+                    // rebuilt the notification and made a binder call to
+                    // system_server — throughout the live stream (audit 23.09).
                     if (notificationKey(text) != lastNotifiedKey) notifyText(text)
                 // NEVER releaseAll() here: killing the streamer on an
                 // error destroys the camera mid-preview ("frozen frame"
@@ -226,9 +226,9 @@ class StreamService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val current = StreamController.current()
         // Every start path must reach startForeground within the ANR window —
-        // но только пока служба ещё не на переднем плане. Когда она уже там,
-        // повторное объявление типов ничего не добавляет, зато из фона его
-        // отвергают и служба рискует быть остановленной (см. inForeground).
+        // but only while the service is not yet in the foreground. Once it is there,
+        // redeclaring the types adds nothing, but from the background it is rejected
+        // and risks stopping the service (see inForeground).
         if (inForeground) {
             notifyText(getString(R.string.notif_connecting))
         } else {
@@ -273,28 +273,28 @@ class StreamService : Service() {
                 // encoder and zeroed activeGen, and the cached instance kept
                 // dropping every callback of the next session. Full resource
                 // teardown belongs to a dedicated Phase 3 mechanism.
-                // Остановка — не на главном потоке. Отправитель SRT ждёт
-                // SHUTDOWN до 500 мс в runBlocking, Moblink-сервер делает
-                // join без таймаута, а клиент SRTLA может ждать DNS под своим
-                // замком. Из интерфейса stop() давно уведён на IO; кнопка в
-                // уведомлении — основной способ остановить эфир с телефоном в
-                // кармане — оставалась на главном (аудит 23.09).
+                // Stop off the main thread. The SRT sender waits for
+                // SHUTDOWN for up to 500 ms in runBlocking, the Moblink server does a
+                // join without a timeout, and the SRTLA client may wait for DNS while holding
+                // its lock. stop() was moved to IO from the UI long ago; the notification button
+                // — the main way to stop the live stream with the phone in
+                // your pocket — was still on the main thread (audit 23.09).
                 val target = current
                 scope.launch {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         runCatching { target?.stop() }
                             .onFailure { android.util.Log.e("StreamService", "ACTION_STOP failed", it) }
                     }
-                    // Захват живёт ровно столько, сколько сеанс: иначе значок
-                    // «идёт запись экрана» остался бы висеть после конца эфира, а
-                    // система продолжала бы считать захват активным.
+                    // Capture lasts exactly as long as the session; otherwise the “screen recording”
+                    // icon would remain after the live stream ended, and
+                    // the system would continue to consider capture active.
                     ScreenCapture.stop()
                     stopSelf()
                 }
                 return START_NOT_STICKY
             }
             ACTION_RECONNECT -> {
-                // Тоже не на главном потоке — см. ACTION_STOP.
+                // Also off the main thread — see ACTION_STOP.
                 current?.let { target ->
                     scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { target.reconnect() } }
                 }
@@ -306,32 +306,32 @@ class StreamService : Service() {
             }
             ACTION_ALLOW_SCREEN -> {
                 acquireWakeLock()
-                // Запрошенный тип обязан быть подмножеством объявленного в
-                // манифесте, иначе система бросает IllegalArgumentException и
-                // роняет ВЕСЬ процесс — вместе с идущим эфиром. Именно это и
-                // случилось 04.09: отладочный манифест заменяет объявление
-                // службы целиком через tools:node="replace", и mediaProjection
-                // туда не доехал. Манифест починен, но падать из-за него
-                // приложение больше не должно: захват экрана — это фича, а
-                // эфир — работа.
+                // The requested type must be a subset of the types declared in the
+                // manifest, or the system throws IllegalArgumentException and
+                // crashes the ENTIRE process — along with the ongoing live stream. That is exactly
+                // what happened on 04.09: the debug manifest replaces the service declaration
+                // entirely via tools:node="replace", and mediaProjection
+                // was missing from it. The manifest is fixed, but the app must no longer crash
+                // because of it: screen capture is a feature, while
+                // the live stream is the work.
                 screenAllowed = true
-                // Тип объявляем ЯВНО и здесь всегда: команда приходит сразу
-                // после согласия, то есть приложение на переднем плане.
+                // Always declare the type EXPLICITLY here: the command arrives immediately
+                // after consent, while the app is in the foreground.
                 inForeground = false
                 startForegroundSafely(getString(R.string.notif_streaming_title))
-                // Только теперь интерфейсу можно брать токен: до объявления
-                // типа система его не отдаёт (см. ScreenCapture.awaitAllowed).
+                // The UI can request the token only now: before the type is declared,
+                // the system will not provide it (see ScreenCapture.awaitAllowed).
                 ScreenCapture.notifyAllowed()
-                // Перерисовать: кнопка остановки захвата появляется только
-                // после того, как интерфейс отдал токен в ScreenCapture.
+                // Redraw: the screen-capture stop button appears only
+                // after the UI passes the token to ScreenCapture.
                 notifyText(getString(R.string.notif_streaming_title))
                 return START_NOT_STICKY
             }
             ACTION_STOP_SCREEN -> {
-                // Тип службы снимет ACTION_REVOKE_SCREEN — его пришлёт
-                // интерфейс из onStop, когда система разошлёт коллбэки.
-                // Здесь только сама остановка, чтобы порядок был один и тот же
-                // и для нашей кнопки, и для остановки системными средствами.
+                // ACTION_REVOKE_SCREEN will remove the service type — the UI sends it
+                // from onStop when the system dispatches callbacks.
+                // This only performs the stop itself, so the order is the same
+                // for both our button and a system-initiated stop.
                 if (!ScreenCapture.stop()) {
                     Log.i("StreamService", "останавливать нечего: захват не идёт")
                 }
@@ -339,17 +339,17 @@ class StreamService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_REVOKE_SCREEN -> {
-                // Захват кончился — сам ли пользователь остановил его из
-                // шторки, или сцена ушла с экрана. Тип надо снять: держать
-                // mediaProjection без живого захвата система не обязана
-                // терпеть, а значок «идёт запись экрана» остался бы висеть.
+                // Capture has ended — whether the user stopped it from the
+                // notification shade or the scene left the screen. The type must be removed:
+                // the system does not have to tolerate mediaProjection without active capture,
+                // and the “screen recording” icon would remain visible.
                 screenAllowed = false
-                // Типы НЕ переобъявляем: команда приходит из фона (захват
-                // останавливают, когда приложение свёрнуто), а оттуда система
-                // объявление отвергает и служба может быть остановлена
-                // целиком. Лишний тип без живого захвата безвреден — он
-                // проверяется в момент объявления, а не постоянно; уйдёт он
-                // при следующем честном подъёме службы.
+                // Do NOT redeclare types: the command comes from the background (capture
+                // is stopped while the app is minimized), and the system rejects redeclaration
+                // from there, potentially stopping the entire service.
+                // An extra type without active capture is harmless — it is
+                // checked when declared, not continuously; it will go away
+                // the next time the service is properly started.
                 notifyText(getString(R.string.notif_streaming_title))
                 return START_NOT_STICKY
             }
@@ -389,7 +389,7 @@ class StreamService : Service() {
     }
 
     override fun onDestroy() {
-        // Захват не переживает службу: он часть сеанса, а не приложения.
+        // Capture does not outlive the service: it is part of the session, not the app.
         ScreenCapture.stop()
         // Wait for the start thread so onDestroy doesn't race with st.start().
         // Bounded tightly: this runs on the main thread, and a long join here
@@ -456,13 +456,13 @@ class StreamService : Service() {
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .addAction(0, getString(R.string.notif_action_stop), stopPending)
-        // **В уведомлении помещается ровно три кнопки.** Четвёртую Android
-        // молча отбрасывает — она есть в объекте (`actions=4` в dumpsys), но
-        // на экране её нет. Поймано 05.09: кнопка «Вернуть камеру» была
-        // добавлена четвёртой, владелец её не видел, а захват при этом честно
-        // шёл. Поэтому третье место делится: пока захват идёт, оно отдано
-        // возврату к камере, а «Переподключить» уступает — переподключение
-        // и так делается само, а из захвата выйти больше нечем.
+        // **The notification fits exactly three buttons.** Android silently discards a
+        // fourth — it is present in the object (`actions=4` in dumpsys), but
+        // not on screen. Reproduced on 05.09: the “Return to camera” button was
+        // added as the fourth; the owner could not see it, while capture continued
+        // as expected. So the third slot is shared: while capture is active, it goes to
+        // returning to the camera, and “Reconnect” yields its place — reconnection
+        // happens automatically anyway, and there is no other way to exit capture.
         if (ScreenCapture.isActive) {
             val stopScreenPending = PendingIntent.getService(
                 this, 4,
@@ -481,8 +481,8 @@ class StreamService : Service() {
         return builder.build()
     }
 
-    /** Все обновления текста идут через эту функцию, чтобы подписка на
-     *  состояние знала, что сейчас на экране, и не пересобирала его зря. */
+    /** All text updates go through this function so the state subscription knows
+     *  what is currently on screen and does not rebuild it unnecessarily. */
     private fun notifyText(text: String) {
         lastNotifiedKey = notificationKey(text)
         notify(buildNotification(text))

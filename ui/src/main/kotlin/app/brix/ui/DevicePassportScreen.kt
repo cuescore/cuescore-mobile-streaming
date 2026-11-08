@@ -33,19 +33,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Паспорт устройства: что умеет ЭТО железо — и кнопка отдать его нам.
+ * Device passport: what THIS hardware can do—and a button to share it with us.
  *
- * **Зачем экран вообще существует.** Всё, что мы знаем о поведении приложения,
- * получено на одном Samsung S21. Два вывода, на которых стоит половина решений
- * в коде — «CBR не держит ни один энкодер» и «капсюли называются bottom/back», —
- * верны для этого телефона и неизвестно, верны ли для остальных. Спросить об
- * этом текстом в issue бесполезно: человек не обязан уметь читать `dumpsys`.
- * Поэтому собираем сами и даём поделиться одним нажатием.
+ * **Why this screen exists.** Everything we know about the app's behavior comes
+ * from one Samsung S21. Two conclusions behind half the decisions in the code—
+ * "no encoder holds CBR" and "the capsules are called bottom/back"—are true for
+ * this phone, but we don't know whether they're true for others. Asking about it
+ * in an issue is useless: people shouldn't have to know how to read `dumpsys`.
+ * So we collect the data ourselves and let them share it with one tap.
  *
- * **Почему отчёт показывается целиком, а не уходит молча.** Это требование из
- * докстринга самого [DeviceReport], и оно не формальность: мы просим человека
- * прислать данные о его устройстве, и единственный честный способ — показать,
- * что именно уедет, до того как оно уедет. Отправки в обход экрана нет.
+ * **Why the full report is shown instead of sent silently.** This is a requirement
+ * in [DeviceReport]'s own KDoc, and it's not a formality: we're asking someone to
+ * send us data about their device, and the only honest way is to show exactly what
+ * will be sent before sending it. There is no way to send without this screen.
  */
 @Composable
 fun DevicePassportScreen(
@@ -56,9 +56,9 @@ fun DevicePassportScreen(
     val scope = rememberCoroutineScope()
     var report by remember { mutableStateOf<String?>(null) }
 
-    // Опрос MediaCodecList и всех камер — блокирующий и небыстрый: на S21 это
-    // десяток физических сенсоров, у каждого свой список режимов. На UI-потоке
-    // это заметный фриз при открытии экрана.
+    // Querying MediaCodecList and all cameras is blocking and slow: the S21 has
+    // about ten physical sensors, each with its own mode list. On the UI thread,
+    // this causes a noticeable freeze when opening the screen.
     LaunchedEffect(Unit) {
         report = withContext(Dispatchers.IO) {
             runCatching { DeviceReport.render(context) }.getOrElse { "" }
@@ -94,8 +94,8 @@ fun DevicePassportScreen(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Text(
-                    // JSON с отступами читается только моноширинным, и переносить
-                    // его по словам нельзя — строки уезжают горизонтально.
+                    // Indented JSON is only readable in monospace, and wrapping it
+                    // at word boundaries would push lines horizontally.
                     text = text ?: stringResource(R.string.device_passport_collecting),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
@@ -110,7 +110,7 @@ fun DevicePassportScreen(
                 enabled = !text.isNullOrEmpty(),
                 onClick = {
                     val body = text ?: return@FilledTonalButton
-                    // Запись файла — не на UI-потоке, как и в экспорте диагностики.
+                    // Write the file off the UI thread, as with the diagnostics export.
                     scope.launch(Dispatchers.IO) {
                         val uri = Diagnostics.exportText(context, "device_passport", body)
                         withContext(Dispatchers.Main) {

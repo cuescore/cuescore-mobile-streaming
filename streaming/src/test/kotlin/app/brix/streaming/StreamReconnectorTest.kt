@@ -10,9 +10,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Лестница переподключения на виртуальном времени: `TestScope` подменяет
- * `delay`, поэтому все пять ступеней (до 30 секунд) проверяются мгновенно и
- * без сети. Ради этой проверяемости [StreamReconnector] и вынесен из стримеров.
+ * Reconnection backoff on virtual time: `TestScope` substitutes `delay`, so all five
+ * steps (up to 30 seconds) are checked instantly and without a network. [StreamReconnector]
+ * was extracted from the streamers to make this testability possible.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class StreamReconnectorTest {
@@ -56,7 +56,7 @@ class StreamReconnectorTest {
 
         reconnector.schedule()
         advanceUntilIdle()
-        // Шестая попытка не должна ни выполниться, ни отложиться.
+        // A sixth attempt must neither run nor be scheduled.
         assertEquals(5, attempts)
         assertEquals(1, exhausted)
     }
@@ -81,9 +81,9 @@ class StreamReconnectorTest {
         var attempts = 0
         val reconnector = StreamReconnector(scope = scope) { attempts += 1 }
 
-        // При обрыве колбэки транспорта приходят пачкой: onDisconnect и
-        // onConnectionFailed подряд. Без отмены предыдущей задачи одна авария
-        // выполнила бы сразу несколько попыток.
+        // On a disconnect, transport callbacks arrive in a batch: onDisconnect and
+        // onConnectionFailed one after the other. Without cancelling the previous task,
+        // a single failure would trigger several attempts at once.
         reconnector.schedule()
         reconnector.schedule()
         reconnector.schedule()
@@ -126,7 +126,7 @@ class StreamReconnectorTest {
         ) { }
 
         reconnector.schedule()
-        // Ещё ничего не ждали — номер уже должен быть известен.
+        // Nothing has been awaited yet—the attempt number should already be known.
         assertEquals(listOf(1), reported)
         advanceUntilIdle()
         reconnector.schedule()

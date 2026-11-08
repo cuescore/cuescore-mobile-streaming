@@ -49,9 +49,9 @@ class FakeSrtlaRec(
     private val originateKeepalives: Boolean = false,
     private val ackData: Boolean = true,
     private val floodInboundEveryMs: Long = 0,
-    /** Притворяться обычным SRT-приёмником: пакеты SRTLA игнорировать целиком,
-     *  как это делает настоящий srt-live-transmit или вход SRT в OBS. Отвечать
-     *  только на рукопожатие SRT. */
+    /** Pretend to be a plain SRT receiver: ignore SRTLA packets entirely, as
+     *  real srt-live-transmit or OBS's SRT input does. Respond only to the SRT
+     *  handshake. */
     private val plainSrt: Boolean = false,
 ) {
     val socket = DatagramSocket(0, InetAddress.getByName("127.0.0.1"))
@@ -66,12 +66,12 @@ class FakeSrtlaRec(
     private val received = ConcurrentLinkedQueue<ByteArray>()
     private val sourcePorts = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
-    /** Всё, что пришло от клиента, в порядке получения. Пишется ДО любых
-     *  фильтров, поэтому по этому списку видно, что клиент реально отправил. */
+    /** Everything received from the client, in arrival order. Recorded BEFORE
+     *  any filters, so this list shows what the client actually sent. */
     fun receivedPackets(): List<ByteArray> = received.toList()
 
-    /** Исходящие порты, с которых к нам приходили пакеты. По их числу видно,
-     *  сколько линков реально несут поток. */
+    /** Source ports from which packets arrived. Their count shows how many
+     *  links are actually carrying the stream. */
     fun receivedSourcePorts(): Set<Int> = sourcePorts.toSet()
 
     /** How many SRTLA keepalives we bounced back, for tests that assert the
@@ -80,10 +80,10 @@ class FakeSrtlaRec(
     var keepalivesEchoed = 0
         private set
 
-    /** Сколько REG2 пришло: повторная регистрация «на месте» шлёт именно его,
-     *  поэтому рост счётчика — детерминированный признак того, что клиент счёл
-     *  канал мёртвым (гоняться за кратким уходом из REGISTERED бесполезно, он
-     *  возвращается за миллисекунды). */
+    /** Number of REG2 packets received: an in-place re-registration sends
+     *  exactly these, so an increasing count deterministically shows that the
+     *  client considered a link dead (tracking a brief exit from REGISTERED is
+     *  pointless; it returns within milliseconds). */
     @Volatile
     var reg2Received = 0
         private set
@@ -115,9 +115,9 @@ class FakeSrtlaRec(
         }
     }
 
-    /** Поток, забивающий сокет клиента входящими пакетами: SRTLA-ACK на номер,
-     *  который клиент не отправлял. Вход плотный, но доставки не подтверждает —
-     *  ровно то сочетание, при котором тик по таймауту сокета не наступает. */
+    /** A thread that floods the client socket with inbound packets: SRTLA-ACKs
+     *  for a number the client never sent. Inbound traffic is dense but doesn't
+     *  confirm delivery — exactly the combination that prevents a socket-timeout tick. */
     private fun startFlood() {
         thread(name = "FakeFlood") {
             while (running) {
@@ -158,7 +158,7 @@ class FakeSrtlaRec(
         }
     }
 
-    /** SRTLA-ACK: тип, два байта отступа, дальше номера по uint32. */
+    /** SRTLA-ACK: type, two bytes of padding, then sequence numbers as uint32. */
     private fun srtlaAck(sn: Long): ByteArray {
         val p = Srtla.createPacket(Srtla.PacketType.ACK, 8)
         writeUInt32(p, 4, sn)
@@ -170,21 +170,21 @@ class FakeSrtlaRec(
         received.add(packet)
         if (Srt.isDataPacket(packet)) {
             if (ackData) {
-                // Настоящий приёмник подтверждает медиа дважды и по-разному:
-                // SRT-ACK (накопительный, сквозной) и SRTLA-ACK (пономерной, по
-                // тому каналу, который пакет принёс). Раньше фейк слал только
-                // первый, и из-за этого сторож доставки был построен на неверном
-                // сигнале — в поле он не сработал ни разу.
+                // A real receiver acknowledges media twice, in different ways:
+                // SRT-ACK (cumulative, end-to-end) and SRTLA-ACK (per-packet, on
+                // the link that carried the packet). The fake used to send only
+                // the first, so the delivery watchdog relied on the wrong signal
+                // and never fired in the field.
                 reply(packetTo(packet, Srt.PacketType.ACK.rawValue))
-                // SRTLA-ACK шлёт только приёмник SRTLA. Обычный про него не знает.
+                // Only an SRTLA receiver sends SRTLA-ACK. A plain receiver doesn't know about it.
                 if (!plainSrt) reply(srtlaAck(Srt.getSequenceNumber(packet)))
             }
             return
         }
         val ctl = Srt.getControlPacketType(packet)
-        // Обычный приёмник о SRTLA не знает: её служебные пакеты для него
-        // мусор, и он их молча отбрасывает. Именно поэтому клиент в этом
-        // режиме не должен их слать вовсе.
+        // A plain receiver doesn't know about SRTLA: its control packets are
+        // garbage to the receiver and are silently discarded. That's why the
+        // client must not send them at all in this mode.
         if (plainSrt && ctl in SRTLA_CONTROL_TYPES) return
         when (val type = ctl) {
             Srtla.PacketType.REG1.rawValue -> {
@@ -234,8 +234,8 @@ class FakeSrtlaRec(
                 // entirely, so no test ever exercised that path — and the field
                 // run of 31.08 found per-link rtt was never measured at all.
                 if (originateKeepalives) {
-                    // Приёмник сочиняет свой keepalive: тип тот же, payload —
-                    // не метка клиента. Клиент не должен принять это за эхо.
+                    // The receiver creates its own keepalive: same type, but the
+                    // payload is not the client's stamp. The client must not treat it as an echo.
                     val own = Srtla.createPacket(
                         Srtla.PacketType.KEEPALIVE,
                         Srtla.CONTROL_TYPE_SIZE + 8,

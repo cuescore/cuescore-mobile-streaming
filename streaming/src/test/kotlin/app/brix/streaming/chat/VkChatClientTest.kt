@@ -100,9 +100,9 @@ class VkChatClientTest {
         val scope = TestScope(testScheduler)
         val tokens = FakeTokenProvider()
         val fetcher = FakeMessagesFetcher { call ->
-            // Второй опрос возвращает то же сообщение id=1 плюс новое id=2 —
-            // ровно то, что реально отдаёт GET /v1/chat/messages между
-            // соседними опросами (окно "последние N", не "новые с X").
+            // Second poll returns the same id=1 plus new id=2, exactly how
+            // GET /v1/chat/messages behaves between consecutive polls:
+            // a "last N" window, not "new since X".
             if (call == 0) {
                 VkMessagesResult.Success(listOf(vkMessage(1)))
             } else {

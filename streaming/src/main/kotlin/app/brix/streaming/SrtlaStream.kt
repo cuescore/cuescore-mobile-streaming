@@ -48,10 +48,10 @@ class SrtlaStream(
         minimumBitrate = 250_000,
         initialBitrate = 2_500_000,
     )
-    // Пишутся с UI/сервисного потока (configure, setAdaptiveBitrate,
-    // updateAdaptiveBitrateLimits), читаются в ABR-корутине и в srtDebug().
-    // abrRelaxedUntilMs и teardownInProgress ниже уже помечены — приводим
-    // остальные поля того же класса к тому же правилу.
+    // Written on the UI/service thread (configure, setAdaptiveBitrate,
+    // updateAdaptiveBitrateLimits), read by the ABR coroutine and srtDebug().
+    // abrRelaxedUntilMs and teardownInProgress below are already annotated;
+    // apply the same rule to the other fields in this class.
     @Volatile
     private var latencyMs = 2000
     @Volatile
@@ -86,8 +86,8 @@ class SrtlaStream(
     var onAdaptiveBitrateKbps: ((Long) -> Unit)? = null
 
     fun configure(profile: StreamProfile, srtLatencyMs: Int = 2000) {
-        // Ограничиваем здесь, а не только в редакторе: значение приходит ещё из
-        // дип-линка и из старых файлов настроек, а уходит в UInt16 рукопожатия.
+        // Clamp here, not just in the editor: values also come from deep links
+        // and legacy settings files, then go into a handshake UInt16.
         latencyMs = clampSrtLatency(srtLatencyMs)
         srtSender.latency = latencyMs
         adaptiveTarget = profile.adaptiveBitrate.targetBitrateKbps.toLong() * 1000
@@ -114,10 +114,10 @@ class SrtlaStream(
             connectChecker.onConnectionSuccess()
         }
         srtSender.onDisconnected = {
-            // Отправитель мёртв — перестаём переотправлять CONCLUSION. Иначе
-            // поздний ответ на него оживлял отправителя уже после того, как
-            // сессия ушла в Reconnecting, и onConnectionSuccess упирался в
-            // запрещённый переход Reconnecting -> Live (аудит 23.09).
+            // Sender is dead: stop retransmitting CONCLUSION. Otherwise a late
+            // reply revived it after the session entered Reconnecting, and
+            // onConnectionSuccess hit the forbidden Reconnecting -> Live
+            // transition (audit 23.09).
             handshakeJob?.cancel()
             handshakeJob = null
             if (!teardownInProgress) {
@@ -210,8 +210,8 @@ class SrtlaStream(
                 srtSender.retransmitConclusion()
             }
             if (isActive && !srtSender.isConnected()) {
-                // Провал уже объявлен — таймаут соединения не должен объявить
-                // его второй раз и забрать ещё одну ступень переподключения.
+                // Failure already reported: connection timeout must not report
+                // it again and consume another reconnect attempt.
                 timeoutJob?.cancel()
                 connectChecker.onConnectionFailed("SRT handshake timeout")
             }
@@ -257,11 +257,11 @@ class SrtlaStream(
     private var micSource = MicSource.AUTO
     private var micDeviceName = ""
 
-    /** Общие настройки звука: усиление и предпочитаемый микрофон. */
+    /** Shared audio settings: gain and preferred microphone. */
     fun applyAudioSettings(audio: app.brix.core.AudioSettings) {
-        // Режим обработки задаётся ДО начала записи: смена на лету требует
-        // пересоздания AudioRecord, поэтому вступает в силу со следующего
-        // старта — как и всё, что запекается в prepare().
+        // Set processing mode BEFORE recording: live changes require rebuilding
+        // AudioRecord, so take effect on the next start, like everything
+        // baked into prepare().
         val wanted = MicDevices.audioSourceOf(audio.processing)
         when (val source = audioSource) {
             is OverlayAudioSource -> source.micSourceForPreference().audioSource = wanted
@@ -281,8 +281,8 @@ class SrtlaStream(
         applyMicSource()
     }
 
-    /** Предпочитаемый микрофон. Подтверждается там же, где мьют и усиление:
-     *  после смены источника звука предпочтение сбрасывается вместе с ним. */
+    /** Preferred microphone. Reapply alongside mute and gain:
+         *  replacing the audio source also resets its device preference. */
     fun applyMicSource() {
         val device = MicDevices.deviceFor(context, micSource, micDeviceName)
         val mic = when (val source = audioSource) {
@@ -290,12 +290,12 @@ class SrtlaStream(
             is MicrophoneSource -> source
             else -> null
         } ?: return
-        // null означает «решай сама, система»: так же ведём себя и когда
-        // выбранное устройство отключили — остаться без звука хуже, чем
-        // вернуться на встроенный.
-        // setPreferredDevice ВОЗВРАЩАЕТ признак успеха, и HAL вправе отказать.
-        // Раньше ответ игнорировался, то есть отказ был бы неотличим от успеха:
-        // пользователь выбрал «у камеры», а пишет по-прежнему нижний.
+        // null means "let the system decide", also used when the selected
+        // device disconnects: no audio is worse than returning to built-in.
+        // setPreferredDevice RETURNS success, and the HAL may refuse.
+        // Previously its response was ignored, making failure indistinguishable
+        // from success: users selected the camera microphone but still recorded
+        // through the bottom one.
         val applied = runCatching { mic.setPreferredDevice(device) }.getOrDefault(false)
         if (!applied) {
             android.util.Log.w(
@@ -305,9 +305,9 @@ class SrtlaStream(
         }
     }
 
-    /** Усиление микрофона из профиля. Как и мьют, подтверждается после каждой
-     *  смены источника звука — иначе включение микшера донатов сбрасывало бы
-     *  уровень на единицу. */
+    /** Profile microphone gain. Like mute, reapply after every audio-source
+         *  replacement; otherwise enabling the donation mixer resets
+         *  the level to one. */
     fun applyMicGain() {
         when (val source = audioSource) {
             is OverlayAudioSource -> source.setMicGain(micGain)
@@ -323,8 +323,8 @@ class SrtlaStream(
         when (val source = audioSource) {
             is OverlayAudioSource -> source.setMicMuted(micMuted)
             is MicrophoneSource -> if (micMuted) source.mute() else source.unMute()
-            // Сцена «микрофон + звук телефона»: mute() у неё глушит только
-            // микрофон. Раньше падала в else — голос шёл в эфир при «выкл».
+            // Microphone + phone audio scene: mute() mutes only its microphone.
+            // Previously fell through to else, broadcasting voice while "off".
             is com.pedro.encoder.input.sources.audio.MixAudioSource -> if (micMuted) source.mute() else source.unMute()
             else -> Unit
         }
@@ -348,14 +348,13 @@ class SrtlaStream(
     }
 
     /**
-     * Передать кодек упаковщику MPEG-TS. Раньше здесь стояло `= Unit`, и
-     * `SrtlaSender.videoCodec` навсегда оставался H.264: в служебной таблице
-     * потока (PMT) объявлялся H.264, что бы ни стоял в настройках. Соседние
-     * `onAudioInfoImp`/`onVideoInfoImp` данные отправителю передают — эта
-     * единственная не передавала.
+     * Pass codec to the MPEG-TS packager. Previously `= Unit` left
+     * `SrtlaSender.videoCodec` permanently H.264: the stream's PMT declared
+     * H.264 regardless of settings. Neighboring `onAudioInfoImp`/
+     * `onVideoInfoImp` pass information to the sender; this alone did not.
      *
-     * Поле 31.08: после переключения профиля на H.265 и обратно в OBS остался
-     * чёрный квадрат — плеер разбирал поток по неверному объявлению.
+     * Field evidence 31.08: switching to H.265 and back left a black square
+     * in OBS because the player parsed the stream using the wrong declaration.
      */
     override fun setVideoCodecImp(codec: VideoCodec) {
         srtlaSender.setVideoCodec(codec)
@@ -391,11 +390,11 @@ class SrtlaStream(
             connectChecker.onConnectionFailed("Malformed srtla URL")
             return
         }
-        // Схема выбирает режим, а не отдельный тип сервера — так же устроено в
-        // Moblin, откуда приходит часть людей. `srtla://` — бондинг с групповой
-        // регистрацией, `srt://` — обычный приёмник, который пакетов SRTLA не
-        // знает. Всё остальное (рукопожатие SRT, streamid, окно, переотправка)
-        // в обоих режимах одинаково: SRTLA данные не заворачивает.
+        // The scheme selects the mode, not a separate server type, as in
+        // Moblin, where some users come from. `srtla://` means bonding with
+        // group registration; `srt://` means a plain receiver without SRTLA.
+        // Everything else (SRT handshake, streamid, window, retransmission)
+        // is identical in both modes: SRTLA does not wrap data.
         srtlaClient.useSrtla = !uri.scheme.equals("srt", ignoreCase = true)
         val streamId = parseStreamId(uri)
         srtSender.streamId = streamId.ifBlank { null }
@@ -417,9 +416,9 @@ class SrtlaStream(
     }
 
     private fun startTransport(host: String, port: Int) {
-        // Задачи прошлой попытки гасим до новой: старый handshakeJob иначе
-        // досчитывал свои повторы CONCLUSION и объявлял провал уже новой
-        // попытке, если та регистрировалась дольше 3–4 с (аудит 23.09).
+        // Cancel previous-attempt jobs before starting anew: otherwise the old
+        // handshakeJob finished CONCLUSION retries and reported failure for
+        // the new attempt if registration took over 3-4 s (audit 23.09).
         handshakeJob?.cancel()
         handshakeJob = null
         teardownInProgress = true
@@ -469,8 +468,8 @@ class SrtlaStream(
                     )
                     adaptiveBitrate.update(stats)
                 }
-                // С выключенным ABR просыпаться 5 раз/с незачем. Секунда —
-                // столько максимум ждёт включение посреди эфира (аудит 23.09).
+                // No reason to wake 5 times/s with ABR disabled. One second
+                // is the maximum delay for enabling it mid-stream (audit 23.09).
                 delay(if (adaptiveBitrateEnabled) 200 else 1000)
             }
         }

@@ -53,15 +53,15 @@ fun ChannelPrioritiesScreen(
         Column(
             modifier = Modifier
                 .padding(innerPadding.verticalOnly())
-                // Каналов ровно столько, сколько их у телефона, плюс релеи
-                // Moblink — в экран они не помещаются, и без прокрутки нижние
-                // просто обрезались: Ethernet (USB) был недостижим совсем.
+                // Phone links plus Moblink relays exceed the screen height.
+                // Without scrolling the bottom items were clipped:
+                // Ethernet (USB) was completely unreachable.
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            // Экран правит приоритеты ВЫБРАННОГО профиля, а не все сразу. Без
-            // имени профиля человек с двумя профилями правит один и считает,
-            // что правит глобально, — а потом «настройки не применяются».
+            // Edit priorities for the SELECTED profile, not all profiles.
+            // Without its name, users with two profiles think edits are global,
+            // then report "settings do not apply".
             profile?.let {
                 Text(
                     text = stringResource(R.string.settings_channel_priorities_profile, it.name),
@@ -112,10 +112,10 @@ private fun ChannelPriorityRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // Каналов у телефона три плюс релеи Moblink. Раньше строка занимала
-            // три яруса (имя, подпись, регулятор во всю ширину) и на экран
-            // влезали две — Ethernet (USB) обрезался и был недостижим.
-            // Теперь всё в одну линию: имя с числами, регулятор, тумблер.
+            // Three phone links plus Moblink relays. Previously each row took
+            // three tiers (name, caption, full-width slider), fitting only two
+            // and making Ethernet (USB) clipped and unreachable.
+            // Now one line: name with numbers, slider, toggle.
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -131,10 +131,10 @@ private fun ChannelPriorityRow(
                 },
             )
             Text(
-                // Раньше здесь стояло «Вес · 62%», и это было враньё: подпись
-                // называла вес, а показывала долю полосы. Числа разные — вес
-                // задаётся регулятором, доля считается от суммы весов всех
-                // включённых каналов, — и путать их нельзя.
+                // Previously "Weight · 62%" was misleading: the label named
+                // weight but showed bandwidth share. These differ: the slider
+                // sets weight; share derives from all enabled link weights.
+                // Do not confuse them.
                 text = stringResource(
                     R.string.settings_priority_weight_share,
                     channel.weight,
@@ -157,9 +157,9 @@ private fun ChannelPriorityRow(
                 if (w != channel.weight) onChange(channel.enabled, w, false)
             },
             onValueChangeFinished = { onChange(channel.enabled, channel.weight, true) },
-            // Ранг 1…10, а не 0…100: формула в SrtlaConnection.score() рассчитана
-            // на небольшое число около единицы, и сто ступеней на палец никому не
-            // нужны. Ноль оставлен — это «выключен».
+            // Rank 1..10, not 0..100: SrtlaConnection.score() expects small
+            // numbers near one, and nobody needs a hundred slider steps.
+            // Retain zero to mean "disabled".
             valueRange = 0f..10f,
             steps = 9,
             modifier = Modifier.weight(1f),

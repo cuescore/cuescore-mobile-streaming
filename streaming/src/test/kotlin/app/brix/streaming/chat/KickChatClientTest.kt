@@ -141,10 +141,9 @@ class KickChatClientTest {
         assertEquals(2, sockets.size)
         assertTrue(sockets[0].closed)
         val sentToSecond = sockets[1].sent
-        // Второй сокет ждёт onOpen перед отправкой подписок — их пока нет,
-        // но факт нового сокета уже подтверждает, что резолв не переиспользовал
-        // старый кэш otherchan-специфичных id (иначе имена каналов остались бы
-        // от kaysan).
+        // The second socket waits for onOpen before sending subscriptions, so there are none yet,
+        // but the new socket itself confirms that resolution did not reuse the old cache of
+        // otherchan-specific IDs (otherwise the channel names would still be from kaysan).
         assertEquals(0, sentToSecond.size)
     }
 

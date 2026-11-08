@@ -1,20 +1,20 @@
 package app.brix.streaming
 
 /**
- * Решения о переподключении SRTLA: когда переходить между фазами сессии, когда
- * брать ступень бэкоффа, когда сдаваться.
+ * SRTLA reconnection decisions: when to move between session phases, when to
+ * take the next backoff step, and when to give up.
  *
- * **Почему отдельным классом.** Эта логика жила внутри SrtlaStreamer вперемешку
- * с камерой, энкодером и колбэками Android, и проверить её можно было только
- * эфиром. Аудит 23.09 нашёл в ней три серьёзных бага разом: ручное
- * переподключение вешало сессию в Reconnecting, отказы забирали лишние ступени
- * (из пяти попыток оставалось три), поздний успех упирался в запрещённый
- * переход. Здесь нет ни Android, ни корутин — только [StreamSession],
- * [ReconnectPolicy] и два интерфейса, поэтому каждый такой сценарий проверяется
- * обычным тестом (SrtlaReconnectControllerTest).
+ * **Why a separate class.** This logic lived inside SrtlaStreamer, mixed in with
+ * the camera, encoder, and Android callbacks, and could only be tested on-air.
+ * The 23.09 audit found three serious bugs at once: manual reconnection left the
+ * session stuck in Reconnecting, failures consumed extra steps (only three of
+ * five attempts remained), and late success hit a forbidden transition. There is
+ * no Android or coroutines here — only [StreamSession], [ReconnectPolicy], and
+ * two interfaces, so each scenario can be tested with a regular unit test
+ * (SrtlaReconnectControllerTest).
  *
- * Стример по-прежнему отвечает за потоки и за то, чьё это событие
- * (`session.matches(activeGen)`): сюда события приходят уже отфильтрованными.
+ * The streamer is still responsible for threads and for checking event ownership
+ * (`session.matches(activeGen)`): events arrive here already filtered.
  */
 internal class SrtlaReconnectController(
     private val session: StreamSession,
@@ -22,24 +22,24 @@ internal class SrtlaReconnectController(
     private val scheduler: Scheduler,
     private val policy: ReconnectPolicy = ReconnectPolicy(),
 ) {
-    /** Что контроллер просит у стримера. */
+    /** What the controller asks the streamer to do. */
     interface Host {
-        /** Переход фазы с обновлением состояния эфира (`updateSession`). */
+        /** Move phase and update stream state (`updateSession`). */
         fun moveTo(phase: SessionPhase, gen: Long): Boolean
 
-        /** Поднять транспорт заново; false — некуда (адрес ещё неизвестен). */
+        /** Bring the transport back up; false means there is no address yet. */
         fun reconnectTransport()
 
-        /** Ручное переподключение из Failed: новая сессия и переход в Connecting. */
+        /** Manual reconnect from Failed: start a new session and move to Connecting. */
         fun restartFromFailed(): Boolean
 
-        /** Номер попытки для HUD и уведомления. */
+        /** Attempt number for the HUD and notification. */
         fun onAttempt(attempt: Int)
 
-        /** Попытки кончились: ошибка в состояние, конвейер остановить. */
+        /** Attempts exhausted: set the error state and stop the pipeline. */
         fun onExhausted(gen: Long)
 
-        /** Отказ вне переподключения: [retryable] решает, держать ли конвейер. */
+        /** Failure outside reconnection: [retryable] decides whether to keep the pipeline. */
         fun onFatal(reason: String)
     }
 
@@ -54,15 +54,15 @@ internal class SrtlaReconnectController(
 
     private var pending: Handle? = null
 
-    /** Текущая попытка — переподключение, а не первый старт. От этого зависит,
-     *  как трактовать отказ: повторить или объявить Failed. */
+    /** Current attempt is a reconnect, not the initial start. This determines
+     *  whether failure means retry or transition to Failed. */
     @Volatile
     var isReconnectAttempt = false
         private set
 
     val attempts: Int get() = policy.attempts
 
-    /** Новый эфир: счётчик с нуля, запланированное отменить. */
+    /** New stream: reset the counter and cancel anything scheduled. */
     fun onStarted() {
         cancelPending()
         policy.reset()
@@ -70,19 +70,19 @@ internal class SrtlaReconnectController(
         host.onAttempt(0)
     }
 
-    /** Остановка или освобождение. */
+    /** Stop or release. */
     fun onStopped() {
         cancelPending()
         isReconnectAttempt = false
     }
 
     /**
-     * Кнопка «Переподключить» (экран, уведомление).
+     * The “Reconnect” button (screen or notification).
      *
-     * С Live и Reconnecting идём в Connecting — как scheduleReconnect и как
-     * RTMP/WHIP. Раньше фаза оставалась Reconnecting, а переход Reconnecting ->
-     * Live таблица запрещает: эфир шёл под затемнением, часы стояли, и
-     * следующий настоящий обрыв уже не запускал автопереподключение.
+     * From Live and Reconnecting, move to Connecting — as scheduleReconnect and
+     * RTMP/WHIP do. Previously the phase stayed Reconnecting, but the transition
+     * Reconnecting -> Live is forbidden by the table: the stream stayed dimmed,
+     * the clock stopped, and the next real disconnect no longer triggered auto-reconnect.
      */
     fun manualReconnect() {
         cancelPending()
@@ -106,10 +106,10 @@ internal class SrtlaReconnectController(
     }
 
     /**
-     * Транспорт поднялся. Страховка на поздний успех: если сессия считала себя
-     * в Reconnecting (ответ на рукопожатие пришёл после объявленного обрыва),
-     * идём через Connecting — иначе эфир живой, а сессия навсегда в
-     * «переподключении».
+     * The transport came up. Guard against late success: if the session thought
+     * it was Reconnecting (the handshake response arrived after a disconnect was
+     * declared), move through Connecting — otherwise the stream is live while the
+     * session remains stuck “reconnecting.”
      */
     fun onSuccess() {
         policy.reset()
@@ -122,10 +122,10 @@ internal class SrtlaReconnectController(
     }
 
     /**
-     * Отказ транспорта. Во время переподключения ступень берётся, только если
-     * фаза действительно сменилась или попытка ещё не запланирована: таймаут
-     * рукопожатия, таймаут соединения и обрыв приходят по одному отказу каждый,
-     * и раньше каждый забирал свою ступень.
+     * Transport failure. During reconnection, consume a backoff step only if the
+     * phase actually changed or no attempt is scheduled yet: handshake timeout,
+     * connection timeout, and disconnect each report one failure, and previously
+     * each one consumed a step.
      */
     fun onFailure(reason: String) {
         if (session.phase == SessionPhase.Failed) return
@@ -139,7 +139,7 @@ internal class SrtlaReconnectController(
         host.onFatal(reason)
     }
 
-    /** Обрыв живого или подключающегося эфира. */
+    /** Disconnect from a live or connecting stream. */
     fun onDisconnect() {
         if (session.phase == SessionPhase.Live || session.phase == SessionPhase.Connecting) {
             if (host.moveTo(SessionPhase.Reconnecting, session.generation)) schedule()

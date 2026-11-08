@@ -19,7 +19,7 @@ class EmotePartsTest {
 
     @Test
     fun `twitch — позиции в кодовых точках, смайл из суррогатов не сдвигает`() {
-        // «😀» — два char, но одна кодовая точка: Twitch считает его за одну позицию.
+        // "😀" is two chars but one code point: Twitch counts it as one position.
         val parts = EmoteParts.twitch("😀 LUL", "25:2-4")
         assertEquals(listOf(ChatPart.Text("😀 "), emote("LUL", twitchUrl("25"))), parts)
     }

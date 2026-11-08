@@ -14,37 +14,34 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Паспорт устройства: что именно умеет ЭТО железо.
+ * Device passport: what exactly THIS hardware can do.
  *
- * **Зачем.** За один день разработки мы дважды упёрлись в вопрос, на который
- * нельзя ответить из документации, только с телефона:
- * 1. Держит ли аппаратный энкодер постоянный битрейт (CBR)? На S21 — ни HEVC,
- *    ни H.264, и узнали мы это подменой кодека и чтением системного лога.
- * 2. Как называются капсюли встроенного микрофона? На S21 «bottom» и «back»,
- *    но это язык прошивки Samsung, и что пишут остальные — неизвестно.
- * 3. Отдаёт ли матрица наш размер кадра НАТИВНО? Камера с ISP съедает 53%
- *    энергобюджета эфира — больше, чем всё остальное вместе, — и если сенсор
- *    не умеет 1280x720, то каждый кадр ещё и масштабируется, а при несовпадении
- *    сторон (сенсор 4:3, эфир 16:9) вдобавок обрезается. Обрезка бесплатна,
- *    когда её делает ISP по готовому режиму, и стоит ватт, когда её делаем мы
- *    в GL. Плюс она сужает угол обзора, что для IRL заметно само по себе.
- *    У S21 объективы — РАЗНЫЕ сенсоры (широкий, сверхширокий), списки режимов
- *    у них тоже разные, поэтому опрашиваем каждый, а не только дефолтный.
+ * **Why.** In one day of development, we ran into the same question twice—one
+ * that documentation can't answer; only the phone can:
+ * 1. Can the hardware encoder hold a constant bitrate (CBR)? On the S21, neither
+ *    HEVC nor H.264 can, and we learned this by switching codecs and reading the system log.
+ * 2. What are the built-in microphone capsules called? On the S21 they're "bottom" and "back",
+ *    but that's Samsung firmware terminology; we don't know what other devices report.
+ * 3. Can the sensor produce our frame size NATIVELY? The camera with its ISP uses 53%
+ *    of the live-stream power budget—more than everything else combined. If the sensor
+ *    can't do 1280x720, every frame is scaled; if the aspect ratios differ (4:3 sensor,
+ *    16:9 stream), it's also cropped. Cropping is free when the ISP does it in a built-in
+ *    mode, and costs a watt when we do it in GL. It also narrows the field of view, which
+ *    is noticeable in IRL streaming on its own. The S21 lenses use DIFFERENT sensors
+ *    (wide and ultrawide), with different mode lists, so we query each one, not just the default.
  *
- * Эти ответы нужны, чтобы приложение не врало пользователю: не предлагало
- * выбор, которого железо не даёт, и не схлопывало два микрофона в один пункт.
- * Собрать их можно только с реальных устройств.
+ * These answers keep the app honest: it won't offer choices the hardware doesn't support
+ * or collapse two microphones into one entry. They can only be collected from real devices.
  *
- * **Что здесь НЕ собирается.** Ни ключей вещания, ни адресов серверов, ни
- * координат, ни имени пользователя, ни чего-либо, что связывает отчёт с
- * человеком. Только характеристики железа, которые одинаковы у всех владельцев
- * такой же модели. Отчёт формируется по явной команде и показывается целиком
- * перед отправкой — отправлять вслепую то, чего не видел, нельзя.
+ * **What we do NOT collect.** No stream keys, server addresses, coordinates, usernames,
+ * or anything else that links the report to a person. Only hardware characteristics shared
+ * by all owners of the same model. The report is generated on explicit request and shown
+ * in full before sending—you must be able to see what will be sent.
  */
 object DeviceReport {
 
     fun build(context: Context): JSONObject = JSONObject().apply {
-        // 2 — добавлен блок cameras. 3 — все видеоэнкодеры и их пределы.
+        // 2 — added the cameras block. 3 — all video encoders and their limits.
         put("schema", 3)
         put("device", deviceInfo())
         put("encoders", encoders())
@@ -52,7 +49,7 @@ object DeviceReport {
         put("audioInputs", audioInputs(context))
     }
 
-    /** Человекочитаемый вид — его же показываем перед отправкой. */
+    /** Human-readable representation, also shown before sending. */
     fun render(context: Context): String = build(context).toString(2)
 
     private fun deviceInfo() = JSONObject().apply {
@@ -64,15 +61,16 @@ object DeviceReport {
     }
 
     /**
-     * Видеоэнкодеры и то, что о них важно знать заранее: аппаратный ли,
-     * и держит ли CBR. Второе — прямой ответ на находку 03.09, когда битрейт
-     * перелетал над целью, а причина была видна только в системном логе.
+     * Video encoders and what matters to know about them in advance: whether
+     * they're hardware-accelerated and whether they hold CBR. The latter directly
+     * addresses the Sep 3 finding: bitrate overshot the target, and the cause was
+     * visible only in the system log.
      */
     private fun encoders(): JSONArray {
         val out = JSONArray()
-        // Все видеоэнкодеры, а не только те, которыми стримим: до 17.09 здесь был
-        // список avc/hevc/av01, и паспорт S21 не показал аппаратные VP8 и VP9,
-        // которые на телефоне есть (видно в /vendor/etc/media_codecs_c2.xml).
+        // All video encoders, not just the ones we stream with: until Sep 17 this
+        // was a list of avc/hevc/av01, so the S21 passport missed hardware VP8 and
+        // VP9 encoders that are present on the phone (see /vendor/etc/media_codecs_c2.xml).
         runCatching {
             MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.forEach { info ->
                 if (!info.isEncoder) return@forEach
@@ -116,16 +114,16 @@ object DeviceReport {
         return out
     }
 
-    /** Кадры, которые приложение реально просит у камеры. */
+    /** Frame sizes the app actually requests from the camera. */
     private val PROFILE_SIZES = listOf(Size(1280, 720), Size(1920, 1080))
 
     /**
-     * Режимы съёмки по каждому объективу.
+     * Capture modes for each lens.
      *
-     * Логическая камера прячет за собой физические сенсоры, и списки режимов у
-     * них разные: на S21 «широкий» и «сверхширокий» — это две разные матрицы.
-     * Спрашивать только `cameraIdList` мало, иначе переключение объектива молча
-     * меняет тепловой профиль, а в отчёте этого не видно.
+     * A logical camera hides physical sensors behind it, and their mode lists
+     * differ: on the S21, "wide" and "ultrawide" are two different sensors.
+     * Querying only `cameraIdList` isn't enough; otherwise switching lenses silently
+     * changes the thermal profile, and the report won't show it.
      */
     private fun cameras(context: Context): JSONArray {
         val out = JSONArray()
@@ -147,8 +145,8 @@ object DeviceReport {
     private fun camera(manager: CameraManager, id: String): JSONObject {
         val chars = manager.getCameraCharacteristics(id)
         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-        // SurfaceTexture — ровно тот класс, через который RootEncoder заводит и
-        // превью, и вход энкодера, так что список режимов нужен именно для него.
+        // SurfaceTexture is exactly the class RootEncoder uses for both preview and encoder input,
+        // so we need its output mode list.
         val sizes = map?.getOutputSizes(SurfaceTexture::class.java)?.toList().orEmpty()
         val active = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
         return JSONObject().apply {
@@ -174,7 +172,7 @@ object DeviceReport {
         }
     }
 
-    /** «1920x1080 16:9 60fps» — потолок кадров считаем из минимальной длительности кадра. */
+    /** "1920x1080 16:9 60fps" — the frame-rate ceiling is calculated from the minimum frame duration. */
     private fun describeSize(
         size: Size,
         map: android.hardware.camera2.params.StreamConfigurationMap?,
@@ -188,11 +186,11 @@ object DeviceReport {
     }
 
     /**
-     * Вердикт по одному нашему размеру кадра: даёт ли его матрица даром.
+     * Verdict for one of our frame sizes: can the sensor provide it for free?
      *
-     * Отчёт читают глазами, поэтому не флаги, а фраза: «нативно», «масштабирование
-     * с 1920x1080», «+ обрезка с 4:3 сенсора». Обрезка попадает сюда всегда, даже
-     * при нативном размере: её делает ISP, но угол обзора она съедает в любом случае.
+     * People read the report, so use phrases rather than flags: "native," "scaled
+     * from 1920x1080," "+ cropped from 4:3 sensor." Cropping is always reported,
+     * even at native size: the ISP does it, but it narrows the field of view either way.
      */
     private fun fit(want: Size, sizes: List<Size>, active: android.graphics.Rect?): String {
         val wantAspect = aspect(want.width, want.height)
@@ -233,9 +231,9 @@ object DeviceReport {
     }
 
     /**
-     * Входы звука с адресами. Адрес — это то самое слово («bottom», «back»),
-     * по которому мы отличаем капсюли, и словарь этих слов у нас сейчас
-     * составлен ровно по одному телефону.
+     * Audio inputs with addresses. The address is the word ("bottom," "back")
+     * we use to distinguish capsules, and our vocabulary for these values is
+     * currently based on exactly one phone.
      */
     private fun audioInputs(context: Context): JSONArray {
         val out = JSONArray()
@@ -246,10 +244,10 @@ object DeviceReport {
                     JSONObject().apply {
                         put("type", d.type)
                         put("builtin", d.type == AudioDeviceInfo.TYPE_BUILTIN_MIC)
-                        // Адрес встроенного микрофона описывает железо, а не
-                        // владельца. У Bluetooth-гарнитуры адрес — это MAC, то
-                        // есть уже про конкретное устройство человека, поэтому
-                        // он не выносится.
+                        // A built-in microphone address describes the hardware, not
+                        // its owner. A Bluetooth headset address is its MAC address,
+                        // which identifies a person's specific device, so it isn't
+                        // included.
                         put("address", if (d.type == AudioDeviceInfo.TYPE_BUILTIN_MIC) d.address else "")
                         put("channels", JSONArray(d.channelCounts.toList()))
                     },

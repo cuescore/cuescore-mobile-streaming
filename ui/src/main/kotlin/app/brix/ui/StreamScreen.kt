@@ -122,9 +122,9 @@ import app.brix.streaming.StreamService
 import app.brix.streaming.rearLenses
 import app.brix.streaming.StreamStatus
 
-/** Во сколько раз буфер превью меньше разрешения потока по стороне.
- *  2 — четверть площади заливки. Число одно и здесь, чтобы менять его при
- *  замерах в одном месте; величина выигрыша меряется прибором И4 (§6.7). */
+/** Factor by which each preview-buffer dimension is smaller than the stream.
+ *  2 means a quarter of the fill area. Keep this number in one place for
+ *  measurements; the benefit is measured with instrument I4 (§6.7). */
 private const val PREVIEW_DOWNSCALE = 2
 
 // Required for streaming. These gate the preview/stream (C1).
@@ -159,9 +159,9 @@ private fun routeSaver(): androidx.compose.runtime.saveable.Saver<SettingsRoute,
                 is SettingsRoute.StreamProfileEdit -> "StreamProfileEdit:" + (r.profileId ?: "")
                 is SettingsRoute.SceneEdit -> "SceneEdit:" + (r.sceneId ?: "")
                 is SettingsRoute.ServerProfileEdit -> "ServerProfileEdit:" + (r.profileId ?: "")
-                // У создания идентификатора ещё нет, зато есть выбранный тип —
-                // кладём его в то же поле с префиксом, чтобы саверу хватило
-                // одной строки и не пришлось заводить второй ключ.
+                // A new item has no ID yet, but has a selected type. Store it
+                // in the same field with a prefix so the saver needs only
+                // one string rather than a second key.
                 is SettingsRoute.WidgetEdit ->
                     "WidgetEdit:" + (r.widgetId ?: r.newKind?.let { "new." + it.name } ?: "")
                 else -> r::class.simpleName ?: "Menu"
@@ -215,11 +215,11 @@ fun StreamScreen(
         stateSaver = routeSaver(),
     ) { mutableStateOf<SettingsRoute>(SettingsRoute.Menu) }
     var settingsCategory by rememberSaveable { mutableStateOf(SettingsCategory.STREAM) }
-    // Режим размещения: панель настроек закрыта, поверх живого превью показана
-    // одна рамка виджета. Состояние ОДНО на все типы: раньше их было два —
-    // отдельное для оверлеев и отдельное для браузерных виджетов, — только
-    // потому что списка было два и «готово» должно было вернуть в правильный.
-    // Список теперь один, и вторая копия стала лишней.
+    // Placement mode: settings are closed and one widget frame appears over
+    // the live preview. ONE state covers all types. Previously overlays and
+    // browser widgets had separate states only because there were two lists
+    // and "done" had to return to the correct one.
+    // There is now one list, so the second copy is unnecessary.
     var placementWidgetId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Back closes placement mode (returning to the widget list), then the
@@ -256,15 +256,14 @@ fun StreamScreen(
         }
     }
 
-    // Настройки читаются с диска асинхронно (SettingsViewModel: первая композиция
-    // должна быть мгновенной, синхронное чтение в конструкторе блокировало холодный
-    // старт). До их прихода мы живём на умолчаниях, а в умолчаниях серверов нет —
-    // и экран «добавьте сервер» успевал мелькнуть при КАЖДОМ запуске, даже когда
-    // всё давно настроено. Флаг settingsLoaded ровно для этого и заведён, но до
-    // 14.09 нигде не использовался.
-    // Спрашиваем у ТОГО ЖЕ объекта, который рисуем: заглушка он или настоящие
-    // настройки. Отдельный флаг здесь не годится — он поднимается раньше, чем
-    // настройки доезжают до экрана, и в эту щель приглашение и пролезало.
+    // Settings load asynchronously from disk (SettingsViewModel: first composition
+    // must be immediate; synchronous constructor reads blocked cold startup).
+    // Until they arrive we use defaults, which contain no servers, so "add a
+    // server" flashed on EVERY launch, even when everything was configured.
+    // settingsLoaded was created for this purpose but remained unused until 14.09.
+    // Ask the SAME object we render whether it is a placeholder or real settings.
+    // A separate flag will not work: it becomes true before settings reach the
+    // screen, and that gap allowed the prompt to appear.
     val settingsReady = !settingsViewModel.isPlaceholder(settings)
     LaunchedEffect(settingsReady, settings.widgets, settings.quickButtons) {
         if (settingsReady) settingsViewModel.ensureCueScoreQuickButton()
@@ -275,12 +274,12 @@ fun StreamScreen(
     val totalViewers = listOfNotNull(twitchViewers, kickViewers).takeIf { it.isNotEmpty() }?.sum()
     androidx.compose.runtime.CompositionLocalProvider(LocalViewers provides totalViewers) {
     Box(modifier = modifier.fillMaxSize()) {
-        // Без сервера показываем обычный экран эфира, а не отдельную заглушку:
-        // после мастера первого запуска, где сервер можно пропустить, заглушка
-        // с кнопкой посреди чёрного экрана выглядела как второй, старый мастер
-        // (владелец, 16.09). Кнопка «Старт» в этом случае открывает список
-        // серверов. Пока настройки не прочитаны — ничего: не утверждаем, что
-        // сервера нет (см. выше про мелькание).
+        // Without a server, show the normal streaming screen, not a separate
+        // placeholder. After the first-run wizard, where a server is optional,
+        // a button in the middle of a black screen looked like a second, old
+        // wizard (the owner, 16.09). Start opens the server list in this case.
+        // Until settings load, show nothing: do not claim there is no server
+        // (see the flashing prompt explanation above).
         val shownServer = server ?: NO_SERVER.takeIf { settingsReady }
         if (shownServer != null) {
             key(shownServer.id) {
@@ -311,15 +310,15 @@ fun StreamScreen(
                     autoHideHud = settings.appearance.autoHideHud,
                     hud = settings.hud,
                     chat = settings.chat,
-                    // Сцена решает, что показывать. Пока сцен нет — прежнее
-                    // поведение: показываем всё включённое. Так включение сцен
-                    // не ломает настройку тем, кто ими не пользуется.
+                    // The scene decides what to show. Without scenes, preserve
+                    // the previous behavior: show everything enabled. Introducing
+                    // scenes does not disrupt settings for users who do not use them.
                     overlays = settings.activeOverlays(),
-                    // Размещаемый ищется по ПОЛНОМУ списку, а не по активным:
-                    // activeOverlays() отдаёт только оверлеи выбранной сцены, и
-                    // «изменить положение» для оверлея из другой сцены не находил
-                    // ничего — настройки закрывались, рамка не появлялась, и это
-                    // выглядело как «выкинуло на главный экран» (владелец, 14.09).
+                    // Find the item being placed in the FULL list, not active items:
+                    // activeOverlays() returns only the selected scene's overlays.
+                    // "Change position" for another scene's overlay found nothing:
+                    // settings closed without a frame appearing, looking like
+                    // "kicked back to the main screen" (the owner, 14.09).
                     browserWidgets = settings.activeBrowserWidgets(),
                     imageWidgets = settings.activeWidgets().filter { it.kind == WidgetKind.IMAGE },
                     textWidgets = settings.activeWidgets().filter { it.kind == WidgetKind.TEXT },
@@ -375,8 +374,8 @@ fun StreamScreen(
 }
 }
 
-/** Заглушка вместо сервера, когда ни одного нет: экран эфира живёт, но старт
- *  ведёт в список серверов. Пустой адрес — признак, по которому это узнаётся. */
+/** Placeholder when there are no servers: the streaming screen remains usable,
+ *  but Start opens the server list. An empty URL identifies this case. */
 internal val LocalViewers = androidx.compose.runtime.compositionLocalOf<Int?> { null }
 
 private val NO_SERVER = ServerProfile(id = "no-server", name = "", type = ServerType.SRTLA)
@@ -403,14 +402,14 @@ private fun ImmersiveStream(
     chat: app.brix.core.ChatSettings,
     overlays: List<app.brix.core.OverlayConfig>,
     browserWidgets: List<app.brix.core.BrowserWidgetConfig>,
-    /** Картинки — рисуются нативно, без WebView. */
+    /** Images render natively, without a WebView. */
     imageWidgets: List<app.brix.core.SceneWidget>,
-    /** Текст с подстановками — тоже нативно. */
+    /** Text with substitutions also renders natively. */
     textWidgets: List<app.brix.core.SceneWidget>,
-    /** Виджет, который сейчас размещают. Ищется по ПОЛНОМУ списку, а не по
-     *  активным: «изменить положение» для виджета из другой сцены иначе не
-     *  находит ничего, настройки закрываются, рамка не появляется — и это
-     *  выглядит как «выкинуло на главный экран» (владелец, 14.09). */
+    /** Widget currently being placed. Look it up in the FULL list, not active
+     *  items: otherwise "change position" for another scene's widget finds nothing,
+     *  closes settings without showing a frame, and looks like being "kicked back
+     *  to the main screen" (the owner, 14.09). */
     placementWidget: app.brix.core.SceneWidget?,
     onOpenSettings: () -> Unit,
     onConfigChange: (QuickButtonConfig) -> Unit,
@@ -458,11 +457,11 @@ private fun ImmersiveStream(
         }
     }
 
-    // Чат — только на экран стримера, в поток не идёт: здесь
-    // это обычный Compose-элемент поверх SurfaceView, а не источник кадра, и
-    // GL-тракта не касается вовсе, в отличие от оверлеев выше. Клиент живёт
-    // своим CoroutineScope, отдельно от [streamer] — соединение с чатом не
-    // зависит от того, идёт ли сейчас эфир.
+    // Chat appears only on the streamer's screen, not in the stream: it is a
+    // normal Compose element over SurfaceView, not a frame source, and never
+    // touches the GL pipeline, unlike the overlays above. The client has its
+    // own CoroutineScope, separate from [streamer]; chat connectivity does not
+    // depend on whether a broadcast is running.
     val chatScope = rememberCoroutineScope()
     val twitchChatClient = remember { app.brix.streaming.chat.TwitchChatClient(scope = chatScope) }
     val kickChatClient = remember { app.brix.streaming.chat.KickChatClient(scope = chatScope) }
@@ -501,19 +500,19 @@ private fun ImmersiveStream(
             vkChatClient.stop()
         }
     }
-    // Мультичат: три независимых клиента сливаются в одну ленту по времени —
-    // панель ничего не знает о конкретных площадках (mergeChatMessages в
-    // :streaming). Отключённый клиент просто вечно отдаёт пустой список,
-    // поэтому слияние не нужно делать условным.
+    // Multi-chat: three independent clients merge into one chronological feed.
+    // The panel knows nothing about individual platforms (mergeChatMessages in
+    // :streaming). Disabled clients always return an empty list, so merging
+    // does not need to be conditional.
     val chatMessages by remember(twitchChatClient, kickChatClient, vkChatClient) {
         app.brix.streaming.chat.mergeChatMessages(
             listOf(twitchChatClient.messages, kickChatClient.messages, vkChatClient.messages),
             maxMessages = 250,
         )
     }.collectAsState(initial = emptyList())
-    // По статусу на каждую ВКЛЮЧЁННУЮ площадку — не общий "хоть кто-то на
-    // связи": иначе не видно, что именно Kick отвалился, пока Twitch и VK
-    // работают.
+    // One status per ENABLED platform, not a shared "someone is connected":
+    // otherwise a Kick disconnect would be hidden while Twitch and VK
+    // continue working.
     val twitchConnected by twitchChatClient.connected.collectAsState()
     val kickConnected by kickChatClient.connected.collectAsState()
     val vkConnected by vkChatClient.connected.collectAsState()
@@ -542,22 +541,21 @@ private fun ImmersiveStream(
     var ready by remember { mutableStateOf(false) }
 
     /**
-     * Применить сцену целиком: сначала картинка, затем звук.
+     * Apply the entire scene: picture first, then audio.
      *
-     * Одним местом на оба вызывающих (эффект смены сцены и коллбэк согласия) —
-     * иначе порядок и запасные пути пришлось бы держать в согласии вручную.
-     * Везде, где что-то не вышло, откат один и тот же: камера и микрофон.
-     * Показать зрителям чёрный кадр или тишину хуже, чем не выполнить
-     * настройку.
+     * One implementation for both callers (scene-change effect and consent callback),
+     * so ordering and fallback paths need not be kept in sync manually.
+     * Every failure falls back to camera and microphone.
+     * A black picture or silence for viewers is worse than not applying a setting.
      */
     fun applyScene(want: app.brix.core.Scene, projection: android.media.projection.MediaProjection?) {
         when (want.source) {
-            // Запасной путь НЕ трогает сторону камеры. Поле [Scene.camera]
-            // относится к сцене «камера»; у сцены с экраном оно остаётся от
-            // прежней правки и человеку не видно. 05.09 на этом и обожглись:
-            // захват не начинался, откат честно возвращал камеру — но
-            // переворачивал её на фронтальную, потому что в сцене с экраном
-            // лежало FRONT. Выглядело как «вместо экрана включилось селфи».
+            // Fallback must NOT change the camera side. [Scene.camera] applies
+            // to camera scenes; screen scenes retain it from previous edits,
+            // hidden from the user. This caused a bug on 05.09: capture failed,
+            // fallback restored the camera but switched to the front camera
+            // because the screen scene held FRONT. It looked like
+            // "selfie turned on instead of screen capture".
             app.brix.core.SceneSource.SCREEN ->
                 if (projection == null || !streamer.showScreen(projection)) {
                     streamer.showCamera()
@@ -573,9 +571,9 @@ private fun ImmersiveStream(
                 streamer.setCameraSide(want.camera)
             }
         }
-        // Звук телефона идёт через AudioPlaybackCapture, а не через
-        // виртуальный дисплей, поэтому один и тот же токен обслуживает и
-        // картинку, и звук — лишь бы дисплей по нему создавали однократно.
+        // Phone audio uses AudioPlaybackCapture, not the virtual display, so
+        // the same token serves both picture and audio, provided a display
+        // is created from it only once.
         if (want.audio == app.brix.core.SceneAudio.MIC || projection == null ||
             !streamer.setSceneAudio(want.audio, projection)
         ) {
@@ -589,19 +587,19 @@ private fun ImmersiveStream(
         val data = result.data
         val want = scene
         if (result.resultCode != android.app.Activity.RESULT_OK || data == null || want == null) {
-            // Отказались — остаёмся на камере и микрофоне, а не показываем
-            // чёрный кадр и не уходим в тишину.
+            // Consent denied: keep camera and microphone rather than showing
+            // a black picture or going silent.
             app.brix.streaming.ScreenCapture.cancelAwait()
             streamer.showCamera()
             streamer.setSceneAudio(app.brix.core.SceneAudio.MIC, null)
         } else {
-            // Всё, что ниже, ждёт службу: пока она не объявила тип
-            // mediaProjection, система токен не отдаёт. Продолжение
-            // регистрируется ДО отправки команды, иначе с ответом можно
-            // разминуться. Раньше эта работа шла сразу, команда службе уходила
-            // по кругу через ActivityManager и не успевала — первое включение
-            // сцены с экраном проваливалось всегда, а со второго работало
-            // (замер 05.09). Со стороны выглядело как «просит права дважды».
+            // Everything below waits for the service: until it declares the
+            // mediaProjection type, the system will not issue a token. Register
+            // the continuation BEFORE sending the command to avoid missing the
+            // response. Previously this ran immediately while the service command
+            // took a round trip through ActivityManager and arrived too late:
+            // the first screen-scene activation always failed, the second worked
+            // (measured 05.09). It looked like "asks for permission twice".
             app.brix.streaming.ScreenCapture.awaitAllowed {
                 val manager = context.getSystemService(
                     android.media.projection.MediaProjectionManager::class.java,
@@ -612,11 +610,11 @@ private fun ImmersiveStream(
                     Log.e("BrixScreen", "токен захвата не выдан: ${it.message}")
                 }.getOrNull()
                 if (projection != null) {
-                    // Коллбэк регистрируется ДО первого виртуального дисплея —
-                    // на Android 14+ это требование, иначе создание дисплея
-                    // падает. Заодно он единственный способ узнать, что захват
-                    // остановили снаружи: без него мы держали бы мёртвый токен
-                    // и показывали зрителям застывший кадр.
+                    // Register the callback BEFORE the first virtual display:
+                    // Android 14+ requires this or display creation fails.
+                    // It is also the only way to detect capture stopped externally;
+                    // without it we would retain a dead token and show viewers
+                    // a frozen frame.
                     runCatching {
                         projection.registerCallback(
                             object : android.media.projection.MediaProjection.Callback() {
@@ -633,13 +631,12 @@ private fun ImmersiveStream(
                             android.os.Handler(android.os.Looper.getMainLooper()),
                         )
                     }
-                    // Владелец захвата — не интерфейс, а ScreenCapture:
-                    // остановить его надо уметь из уведомления, когда
-                    // приложение свёрнуто. Токен при этом одноразовый (замер
-                    // 05.09): повторный createVirtualDisplay на том же
-                    // экземпляре система встречает отказом и гасит идущий
-                    // захват, поэтому согласие спрашивается заново на каждый
-                    // заход в сцену с экраном.
+                    // ScreenCapture owns the capture, not the UI: it must be
+                    // stoppable from the notification while the app is minimized.
+                    // The token is single-use (measured 05.09): another
+                    // createVirtualDisplay on the same instance is rejected
+                    // and stops the current capture, so consent is requested
+                    // again on every entry into a screen scene.
                     app.brix.streaming.ScreenCapture.set(projection)
                 }
                 applyScene(want, projection)
@@ -651,16 +648,16 @@ private fun ImmersiveStream(
         }
     }
 
-    // Ключ — сцена целиком, а не её id: правку выбранной сцены (сменили
-    // источник, выбрали другую картинку) иначе пришлось бы «применять»
-    // переключением на другую сцену и обратно.
+    // Key on the entire scene, not its id: otherwise applying edits to the
+    // selected scene (source or image changes) would require switching
+    // to another scene and back.
     LaunchedEffect(scene, ready) {
         val want = scene
         if (!ready || want == null) return@LaunchedEffect
-        // Согласие спрашивается ОДИН раз на сцену, даже когда токен нужен и
-        // картинке, и звуку: раньше два блока подряд видели ещё не пришедший
-        // ответ и открывали диалог дважды. Сочетание «экран плюс звук
-        // телефона» — самое обычное, так что натыкались бы на это постоянно.
+        // Request consent ONCE per scene even when picture and audio both need
+        // the token. Previously two consecutive blocks saw a pending response
+        // and opened the dialog twice. "Screen plus phone audio" is a common
+        // combination, so users would encounter this constantly.
         val needsProjection = want.source == app.brix.core.SceneSource.SCREEN ||
             want.audio != app.brix.core.SceneAudio.MIC
         if (needsProjection) {
@@ -705,8 +702,8 @@ private fun ImmersiveStream(
         if (powerSaveOn) add(ButtonAction.POWER_SAVE)
         if (cueScoreWidgetEnabled) add(ButtonAction.CUESCORE_SCOREBOARD)
     }
-    // Ответ на нажатие «Снимок»: без него кнопка молчит, и непонятно, снялось
-    // ли что-нибудь. Строка гаснет сама.
+    // Feedback for Snapshot: otherwise the button is silent and users cannot
+    // tell whether anything was captured. The message clears itself.
     var snapshotMessage by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(snapshotMessage) {
         if (snapshotMessage != null) {
@@ -738,7 +735,7 @@ private fun ImmersiveStream(
     // area — there is no way to spare just the toggle button itself. A first
     // version that set it near-zero made the entire UI unreadable outdoors,
     // trapping the user with no visible way to turn it back off (field-
-    // reported 2026-08-31: "вешает экран... и всё, пока не отожмешь").
+    // reported 2026-08-31: "freezes the screen... until you turn it off").
     val activity = LocalContext.current as? Activity
     LaunchedEffect(powerSaveOn) {
         if (powerSaveOn) {
@@ -831,12 +828,12 @@ private fun ImmersiveStream(
         }
     }
 
-    // Настройки камеры и звука, изменённые поверх идущего экрана эфира (экран
-    // настроек рисуется оверлеем над ним), доходили до стримера только при
-    // Start: стабилизация, зеркало, усиление микрофона выглядели применёнными,
-    // а энкодер снимал по-старому до Stop->Start (аудит 23.09). configureCamera
-    // и configureAudio рассчитаны на применение на лету. Первое значение
-    // пропускаем — его уже отдал блок выше.
+    // Camera and audio settings edited over the active streaming screen (settings
+    // render as an overlay) used to reach the streamer only on Start:
+    // stabilization, mirroring and mic gain looked applied, but the encoder kept
+    // the old settings until Stop->Start (audit 23.09). configureCamera and
+    // configureAudio support live updates. Skip the first value, which the block
+    // above has already supplied.
     val liveCamera by rememberUpdatedState(cameraDefaults)
     val liveAudio by rememberUpdatedState(audio)
     LaunchedEffect(streamer) {
@@ -885,8 +882,8 @@ private fun ImmersiveStream(
                 }
             }
             ButtonAction.ADAPTIVE_BITRATE -> streamer.setAdaptiveBitrate(!state.adaptiveBitrateEnabled)
-            // Не на главном потоке: переподключение останавливает транспорт, а
-            // тот может ждать DNS под замком клиента SRTLA (аудит 23.09).
+            // Not on the main thread: reconnect stops the transport, which may
+            // wait for DNS while holding the SRTLA client lock (audit 23.09).
             ButtonAction.RECONNECT -> scope.launch(kotlinx.coroutines.Dispatchers.IO) { streamer.reconnect() }
             ButtonAction.SETTINGS -> onOpenSettings()
             ButtonAction.TORCH -> streamer.setTorch(!state.torchOn)
@@ -905,21 +902,21 @@ private fun ImmersiveStream(
             ButtonAction.MASCOT -> Unit // purely decorative, no tap action
             ButtonAction.POWER_SAVE -> { powerSaveOn = !powerSaveOn }
             ButtonAction.CUESCORE_SCOREBOARD -> onToggleCueScoreWidget()
-            // Снимок берётся из GL-цепочки, то есть это кадр ЭФИРА — с
-            // оверлеями и эффектами, ровно то, что видит зритель. Отдельный
-            // фотоснимок с камеры показал бы другое изображение и сбивал бы
-            // с толку при разборе «а что было в кадре».
+            // Capture from the GL chain: this is a STREAM frame with overlays
+            // and effects, exactly what viewers see. A separate camera photo
+            // would show a different picture and confuse investigations of
+            // "what was in the frame".
             ButtonAction.SNAPSHOT -> {
                 streamer.takeSnapshot { bitmap ->
                     val uri = bitmap?.let { saveSnapshotToGallery(context, it) }
                     snapshotMessage = if (uri != null) R.string.snapshot_saved else R.string.snapshot_failed
                 }
             }
-            // Перебираем то, что подключено сейчас, а не весь enum: гарнитуру
-            // втыкают и вынимают посреди эфира, и предлагать отсутствующее
-            // устройство значило бы оставить стримера без звука.
-            // Перебор по кругу: сцен обычно две-три, и лезть за ними в
-            // настройки посреди эфира — не вариант.
+            // Cycle through currently connected devices, not the entire enum:
+            // headsets are plugged and unplugged mid-stream, and offering an
+            // absent device would leave the streamer without audio.
+            // Cycle through scenes: there are usually two or three, and opening
+            // settings for them mid-stream is not practical.
             ButtonAction.SCENE -> {
                 if (scenes.isNotEmpty()) {
                     val i = scenes.indexOfFirst { it.id == scene?.id }
@@ -968,9 +965,9 @@ private fun ImmersiveStream(
                 // Foreground service first: it owns the wake lock that keeps
                 // the CPU alive if the screen goes off mid-connect.
                 StreamService.start(context)
-                // connectUrl, а не baseUrl: у RTMP ключ трансляции хранится
-                // отдельным полем и приклеивается к адресу здесь. Профили без
-                // отдельного ключа отдают baseUrl как есть.
+                // connectUrl, not baseUrl: RTMP stores the stream key separately
+                // and appends it to the URL here. Profiles without a separate
+                // key return baseUrl unchanged.
                 withContext(Dispatchers.IO) { current.start(server.connectUrl()) }
             }
         }
@@ -994,7 +991,7 @@ private fun ImmersiveStream(
             if (ready) {
                 // The factory lambda below runs once (Compose's AndroidView
                 // contract) and the touch listener it installs closes over
-                // whatever it captures — without this, toggling "Фокус" in
+                // whatever it captures — without this, toggling "Focus" in
                 // Settings while this screen stays composed (Settings renders
                 // as an overlay on top, not a separate destination) would
                 // never be picked up until the SurfaceView is recreated.
@@ -1033,17 +1030,17 @@ private fun ImmersiveStream(
                             // separate encoder surface (confirmed:
                             // GlStreamInterface tracks preview/encoder
                             // resolution in separate fields).
-                            // Ниже разрешения потока, а не вровень с ним. Бюджет
-                            // 6.0-П5: превью стоит 2.80 Вт из 5.31, больше, чем весь
-                            // эфир поверх него (1.22 Вт) — и это уже с привязкой
-                            // буфера к потоку. Дальше удешевлять можно только за счёт
-                            // видоискателя, и это законный размен: зритель превью не
-                            // видит, качество эфира не трогается (в отличие от
-                            // троттлинга битрейта, убранного сознательно).
-                            // Половина по стороне — четверть заливки на двух проходах
-                            // GL из пяти (drawFilters(true) и drawScreenPreview в
-                            // GlStreamInterface существуют только ради превью) плюс
-                            // дешевле композиция. Растягивает обратно SurfaceFlinger.
+                            // Below stream resolution, not equal to it. Budget
+                            // 6.0-P5: preview costs 2.80 W out of 5.31, more than
+                            // streaming on top of it (1.22 W), even with the buffer
+                            // matched to the stream. Further savings must come from
+                            // the viewfinder: viewers never see the preview, so stream
+                            // quality is unchanged (unlike bitrate throttling,
+                            // deliberately removed).
+                            // Half each dimension means a quarter of the fill in two
+                            // of five GL passes (drawFilters(true) and drawScreenPreview
+                            // in GlStreamInterface exist only for preview), plus cheaper
+                            // composition. SurfaceFlinger scales it back up.
                             profile?.video?.let { vs ->
                                 sv.holder.setFixedSize(
                                     (vs.width / PREVIEW_DOWNSCALE).coerceAtLeast(320),
@@ -1109,13 +1106,12 @@ private fun ImmersiveStream(
                                     height: Int,
                                 ) {
                                     android.util.Log.w("BrixPreview", "surfaceChanged width=$width height=$height format=$format")
-                                    // Поверхность сменила размер — значит окно
-                                    // повернулось. startPreview сам решит, надо
-                                    // ли перезапускаться: он сравнивает размер с
-                                    // тем, с которым стартовал (см.
-                                    // CameraController). Без этого после
-                                    // портретной заставки превью оставалось
-                                    // вертикальной полосой.
+                                    // Surface size changed, so the window rotated.
+                                    // startPreview decides whether to restart by
+                                    // comparing against its starting size (see
+                                    // CameraController). Without this, preview
+                                    // remained a vertical strip after a portrait
+                                    // holding screen.
                                     try {
                                         if (ready) streamer.startPreview(sv)
                                     } catch (e: Exception) {
@@ -1157,8 +1153,8 @@ private fun ImmersiveStream(
                     widthFraction = placementWidget.width,
                     heightFraction = placementWidget.height,
                     onMove = { px, py, w, h -> onWidgetChange(placementWidget.id, px, py, w, h) },
-                    // Живое превью — только у типов с постоянной картинкой.
-                    // У донат-алерта во время настройки показывать нечего.
+                    // Live preview only for types with persistent content.
+                    // Donation alerts have nothing to show during configuration.
                     onLiveMove = if (placementWidget.kind == WidgetKind.DONATION_ALERT) {
                         { _, _, _, _ -> }
                     } else {
@@ -1289,9 +1285,10 @@ private fun ImmersiveStream(
             }
 
             if (hud.showAudioLevel) {
-                // Справа от углового слота слева внизу — отдельного поля вне
-                // сетки, куда владелец ставит мьют. Привязка к месту, а не к
-                // кнопке: что бы ни стояло в слоте, индикатор не переезжает.
+                // To the right of the bottom-left corner slot, a separate field
+                // outside the grid where the owner places mute. Anchor to the
+                // position, not the button: the indicator stays put whatever
+                // occupies the slot.
                 AudioMeter(
                     left = streamer.audioLevelLeft,
                     right = streamer.audioLevelRight,
@@ -1361,8 +1358,8 @@ private fun OverlayHost(
     val overlayController = remember(context, streamer, overlay.id) {
         OverlayController(context, streamer, overlay.id)
     }
-    // Сервис берётся из адреса виджета: DonationAlerts, DonatePay, iHAQ и
-    // прочие отличаются только доменом (см. DonationService).
+    // Derive the service from the widget URL: DonationAlerts, DonatePay, iHAQ
+    // and others differ only by domain (see DonationService).
     val overlayService = remember(overlay.url) { app.brix.core.DonationService.forUrl(overlay.url) }
     val overlayJsBridge = remember(overlayController, overlayService) {
         OverlayJsBridge(overlayController) { connected ->
@@ -1415,11 +1412,11 @@ private fun OverlayHost(
                     override fun onConsoleMessage(message: android.webkit.ConsoleMessage): Boolean {
                         val text = message.message()
                         android.util.Log.d("Overlay", "[${overlay.id.take(8)}] console: $text (${message.sourceId()}:${message.lineNumber()})")
-                        // Состояние соединения больше не вычитывается из текста
-                        // консоли: его сообщает подменённый WebSocket/EventSource
-                        // (OverlayJsBridge.onSocketState). Прежний разбор строк был
-                        // подгонкой под формулировки DonationAlerts и у DonatePay,
-                        // iHAQ и прочих не работал вовсе.
+                        // Connection state no longer comes from console text:
+                        // the wrapped WebSocket/EventSource reports it through
+                        // OverlayJsBridge.onSocketState. Previous string parsing
+                        // was tailored to DonationAlerts wording and did not
+                        // work at all for DonatePay, iHAQ or others.
                         return true
                     }
                 }
@@ -1443,12 +1440,12 @@ private fun OverlayHost(
         }
     }
     DisposableEffect(overlayPreview) {
-        // Мост переживает пересоздание WebView (тот же оверлей, новый адрес
-        // с тем же сервисом) — снова открываем его для новой страницы.
+        // The bridge survives WebView recreation (same overlay, new URL for
+        // the same service); reopen it for the new page.
         overlayJsBridge.detached = false
         onDispose {
-            // Сначала глушим мост: иначе закрытие сокетов при destroy() вернёт
-            // метку, которую forgetOverlayConnection ниже только что убрал.
+            // Disable the bridge first: otherwise socket closure during destroy()
+            // would restore the marker just removed by forgetOverlayConnection below.
             overlayJsBridge.detached = true
             overlayPreview?.let { view ->
                 (view.parent as? android.view.ViewGroup)?.removeView(view)
@@ -1603,9 +1600,9 @@ private fun BrowserWidgetHost(
         var bufferIndex = 0
         var bufferW = 0
         var bufferH = 0
-        // Самая дорогая из периодических задач по замеру 12.09 — 9-10% одного
-        // ядра при периоде 200 мс, вчетверо больше на 50 мс. Именно её отсутствие
-        // в отчёте не давало понять, чем был занят телефон в сессии 07.09.
+        // The most expensive periodic task measured on 12.09: 9-10% of one core
+        // at 200 ms, four times more at 50 ms. Its absence from the report hid
+        // what kept the phone busy during the 07.09 session.
         app.brix.core.diagnostics.PeriodicTasks.register("widget-${widget.id.take(4)}", widget.refreshMs).use {
         while (true) {
             val w = webView.width.coerceAtLeast(1)
@@ -1634,12 +1631,12 @@ private fun BrowserWidgetHost(
 }
 
 /**
- * Картинка поверх видео — БЕЗ WebView.
+ * Image over video WITHOUT a WebView.
  *
- * Раньше «просто повесить картинку» делалось браузерным виджетом, то есть
- * стоило целого браузера: замерено 9–10% ядра на виджет при периоде 200 мс,
- * плюс постоянная пересъёмка. Здесь кадр читается с диска один раз и
- * отправляется в GL-тракт одним вызовом — периодической работы нет вовсе.
+ * Previously "just add an image" used a browser widget, costing an entire browser:
+ * measured at 9-10% of a core per widget at 200 ms, plus constant snapshotting.
+ * Here the frame is read from disk once and sent into the GL pipeline in one
+ * call, with no periodic work at all.
  */
 @Composable
 private fun ImageWidgetHost(
@@ -1664,9 +1661,9 @@ private fun ImageWidgetHost(
             }.getOrNull()
         }
         if (bitmap == null) {
-            // Молча пропасть нельзя: URI мог протухнуть вместе с разрешением
-            // (файл удалён, карта вынута), и человеку надо понять, почему в
-            // кадре пусто.
+            // Do not disappear silently: the URI or permission may have expired
+            // (file deleted, card removed), and users need to know why the
+            // frame is empty.
             android.util.Log.w("Overlay", "виджет-картинка: не читается ${widget.imageUri}")
             streamer.detachLiveOverlay(widget.id)
             return@LaunchedEffect
@@ -1682,11 +1679,11 @@ private fun ImageWidgetHost(
 }
 
 /**
- * Текст с подстановками поверх видео — тоже без WebView.
+ * Text with substitutions over video, also without a WebView.
  *
- * Перерисовка раз в секунду и только когда строка ДЕЙСТВИТЕЛЬНО изменилась:
- * шаблон без {time} и {bitrate} рисуется один раз за эфир. Это принципиально
- * дешевле браузерного виджета, которым такую строку делали раньше.
+ * Redraw once a second and only when the string ACTUALLY changes: a template
+ * without {time} or {bitrate} renders once per stream. This is fundamentally
+ * cheaper than the browser widget previously used for such text.
  */
 @Composable
 private fun TextWidgetHost(
@@ -1724,8 +1721,8 @@ private fun TextWidgetHost(
     }
 }
 
-/** Подстановки в тексте виджета. Неизвестное имя оставляем как есть — так
- *  человек видит опечатку в кадре, а не пустоту, и понимает, что исправлять. */
+/** Widget-text substitutions. Leave unknown names unchanged so users see the
+ *  typo in the frame instead of empty space and know what to fix. */
 internal fun substituteWidgetText(
     template: String,
     state: app.brix.streaming.StreamState,
@@ -1738,16 +1735,16 @@ internal fun substituteWidgetText(
         .replace("{battery}", "$batteryPercent%")
 }
 
-/** Заряд в процентах. BatteryManager отдаёт его синхронно, без приёмника:
- *  строка перерисовывается раз в секунду, и держать ради этого регистрацию
- *  broadcast-приёмника незачем. */
+/** Battery percentage. BatteryManager supplies it synchronously without a receiver:
+ *  the text redraws once a second, so there is no reason to maintain a registered
+ *  broadcast receiver for it. */
 private fun batteryPercent(context: Context): Int =
     (context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager)
         ?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 0
 
 private fun renderWidgetText(text: String, scale: Float): android.graphics.Bitmap {
-    // Обводка вместо подложки: плашка закрывает кадр прямоугольником, а контур
-    // читается и на светлом, и на тёмном. Так же сделана подпись донат-алерта.
+    // Outline instead of a background: a panel obscures the frame with a rectangle,
+    // while an outline reads on both light and dark. Donation captions do the same.
     val size = 48f * scale.coerceIn(0.5f, 3f)
     val fill = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         textSize = size
@@ -1773,12 +1770,12 @@ private fun renderWidgetText(text: String, scale: Float): android.graphics.Bitma
 }
 
 /**
- * Сохраняет снимок в галерею через MediaStore.
+ * Saves a snapshot to the gallery through MediaStore.
  *
- * MediaStore, а не свой каталог: на Android 10+ запись в общие «Картинки» не
- * требует разрешений вовсе, файл сразу виден в галерее, и его не теряют при
- * удалении приложения — а снимок делают затем, чтобы его кому-то показать.
- * Возвращает null, если записать не удалось; вызывающий скажет об этом вслух.
+ * MediaStore rather than a private directory: on Android 10+, writing to shared
+ * Pictures needs no permission, appears immediately in the gallery and survives
+ * app removal. Snapshots are taken to show someone else.
+ * Returns null if saving fails; the caller will notify the user.
  */
 private fun saveSnapshotToGallery(context: Context, bitmap: android.graphics.Bitmap): android.net.Uri? {
     val name = "brix-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
@@ -1803,11 +1800,10 @@ private fun saveSnapshotToGallery(context: Context, bitmap: android.graphics.Bit
 @Composable
 private fun StatusOverlay(
     state: app.brix.streaming.StreamState,
-    /** Тик часов эфира отдельным потоком, а не числом сверху: собирается ЗДЕСЬ,
-     *  чтобы ежесекундное изменение перерисовывало только эту панель, а не всё
-     *  тело экрана стримера. Раньше отметка времени лежала в StreamState,
-     *  который собирается в самом верху, и одна цифра часов тянула за собой
-     *  пересборку двух с лишним тысяч строк. */
+    /** Stream clock ticks as a separate flow, not a number from above: collected HERE
+     *  so each second redraws only this panel, not the whole streaming screen.
+     *  Previously the timestamp lived in StreamState, collected at the top,
+     *  so one clock digit triggered recomposition of over two thousand lines. */
     uptimeTick: kotlinx.coroutines.flow.StateFlow<Long>,
     connectedAtElapsedMs: Long?,
     hud: app.brix.core.HudConfig,
@@ -1891,8 +1887,8 @@ private fun StatusOverlay(
     }
 }
 
-/** Угловой слот быстрых кнопок: отступ от угла и размер ячейки
- *  (SMALL_W/SMALL_H в QuickButtons). Индикатор уровня стоит над ним. */
+/** Corner quick-button slot: corner inset and cell size
+ *  (SMALL_W/SMALL_H in QuickButtons). The level indicator sits above it. */
 private val CORNER_SLOT_PADDING = 16.dp
 private val CORNER_SLOT_SIZE = 50.dp
 
@@ -1906,23 +1902,23 @@ private val AUDIO_METER_GREEN = Color(0xFF43A047)
 private val AUDIO_METER_MUTED = Color(0xFF9E9E9E)
 
 /**
- * Уровень микрофона двумя строками сегментов справа от углового слота: верхняя
- * — левый канал, нижняя — правый (в моно одинаковые).
+ * Microphone level in two segmented rows to the right of the corner slot:
+ * top is left channel, bottom is right (identical in mono).
  *
- * Вид — как у IRL Pro (владелец, 26.10): горят только сегменты, до которых
- * дошёл звук, пустые не рисуются; последний — красный. Высота блока почти
- * равна кнопке слота, чтобы индикатор читался боковым зрением: прежние полоски по
- * 4 dp на ходу было не разглядеть. 10 сегментов по 6 дБ шкалы −60…0.
+ * Appearance follows IRL Pro (the owner, 26.10): only segments reached by the
+ * sound level light up; empty ones are not drawn; the last is red. The block
+ * is nearly as tall as the slot button for peripheral visibility: the previous
+ * 4 dp bars were unreadable while moving. 10 segments of 6 dB on a -60..0 scale.
  *
- * Перегрузка держится 1.5 с ([app.brix.streaming.MicLevelMeter]) — последний
- * сегмент горит красным всё это время. Мьют — всё серое, но полоски живые:
- * уровень меряется до глушения, так видно, что микрофон работает.
+ * Clipping is held for 1.5 s ([app.brix.streaming.MicLevelMeter]); the last
+ * segment stays red throughout. When muted everything is gray but bars stay
+ * live: measurement precedes muting so users can see the microphone works.
  *
- * Значения читаются в фазе рисования, а не композиции: перерисовка ≤10 раз/с
- * и только этого холста, без пересборки экрана.
+ * Values are read during drawing, not composition: at most 10 redraws/s,
+ * limited to this canvas, without recomposing the screen.
  *
- * Не в HUD (владелец, 17.09): HUD и так перегружен. Отдельного значка мьюта
- * нет — для этого есть быстрая кнопка (20.09).
+ * Not in the HUD (the owner, 17.09): it is already crowded. No separate mute
+ * icon; the quick button serves that purpose (20.09).
  */
 @Composable
 private fun AudioMeter(
@@ -1989,11 +1985,10 @@ private fun HudCard(
     val tertiary = MaterialTheme.colorScheme.tertiary
     val warn = MaterialTheme.colorScheme.error
     val border = MaterialTheme.colorScheme.outlineVariant
-    // Три роли, а не «на глаз». Владелец, пожелание 4: «шрифт одного размера,
-    // цифры другого, индикаторы линков третьего». До этого в HUD жили вперемешку
-    // labelSmall и labelMedium, три размера значков (12, 13, 14 dp) и цифры тем
-    // же шрифтом, что подписи, — от чего числа при каждом обновлении дёргали
-    // соседей по строке.
+    // Three roles rather than guesswork. Owner request 4: "text at one size,
+    // numbers at another, link indicators at a third". Previously the HUD mixed
+    // labelSmall and labelMedium, three icon sizes (12, 13, 14 dp) and numbers
+    // in the same font as labels, making updates shift neighboring items.
     val hudLabel = HudLabel
     val compact = hudLabel
     val hudNumber = HudNumber
@@ -2025,10 +2020,9 @@ private fun HudCard(
                     Spacer(Modifier.width(6.dp))
                     Text(uptime.removePrefix(" · "), style = hudNumber, color = onSurfaceVariant)
                 }
-                // Название сцены рядом со временем, а не в правом блоке: справа
-                // живут числа, за которыми следят непрерывно, и вклинивать между
-                // ними текст переменной длины значило бы дёргать их положение при
-                // каждом переключении сцены.
+                // Scene name beside time, not in the right block: the right holds
+                // continuously monitored numbers. Variable-length text between
+                // them would shift their position on every scene change.
                 if (hud.showScene && !sceneName.isNullOrBlank()) {
                     Spacer(Modifier.width(HUD_GAP))
                     Icon(Icons.Filled.Layers, null, Modifier.size(HUD_ICON), tint = onSurfaceVariant)
@@ -2042,11 +2036,11 @@ private fun HudCard(
                         modifier = Modifier.widthIn(max = 120.dp),
                     )
                 }
-                // По метке на каждый донат-сервис, а не одна общая точка с
-                // логотипом DonationAlerts: виджетов может быть несколько и из
-                // разных сервисов, и важно видеть, какой именно отвалился.
-                // Буквенные метки, а не чужие логотипы — чтобы не тащить в
-                // открытое приложение фирменные знаки.
+                // One marker per donation service, not a shared dot with the
+                // DonationAlerts logo: multiple widgets may use different services,
+                // and users need to see exactly which one disconnected.
+                // Letter labels, not third-party logos, to avoid including
+                // trademarks in the open-source app.
                 state.donationServices.forEach { (serviceId, connected) ->
                     val service = app.brix.core.DonationService.entries
                         .firstOrNull { it.id == serviceId } ?: app.brix.core.DonationService.UNKNOWN
@@ -2178,10 +2172,10 @@ private fun ChannelBars(
     totalBytes: Long,
     modifier: Modifier = Modifier,
 ) {
-    // Высота столбиков — по высоте строчной буквы, а не 14 dp: контейнер
-    // выравнивается по центру строки, столбики растут снизу, и при высоком
-    // контейнере короткий столбик оказывался заметно ниже текста рядом
-    // (владелец, 15.09: «индикация каналов опять ниже чем все»).
+    // Bar height matches lowercase text, not 14 dp: the container is centered
+    // in the row and bars grow from the bottom. In a tall container a short
+    // bar sat noticeably below adjacent text (the owner, 15.09:
+    // "channel indicators are lower than everything again").
     Row(modifier = modifier, verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         state.connections.forEach { conn ->
             val share = if (totalBytes > 0) (conn.bytesSent * 100 / totalBytes).toInt() else 0
@@ -2205,29 +2199,29 @@ private fun MetricCell(label: String, value: String, warn: Boolean) {
 }
 
 /**
- * Три роли текста в HUD — одна на всё.
+ * Three HUD text roles, shared throughout.
  *
- * **Подпись** (`HudLabel`) — слова: LIVE, названия метрик, имя сцены.
- * **Число** (`HudNumber`) — всё, что меняется на ходу. Моноширинный с
- * табличными цифрами: пропорциональные цифры имеют разную ширину, и битрейт,
- * прыгающий с 4.9 на 11.1, сдвигал соседние блоки строки на каждом обновлении.
- * **Канал** (`HudChannel`) — имена линков, с разрядкой и заглавными: их читают
- * боковым зрением, не вчитываясь, и разрядка помогает отличить их от чисел
- * рядом.
+ * **Label** (`HudLabel`): words such as LIVE, metric names and scene names.
+ * **Number** (`HudNumber`): everything that changes live. Monospaced with
+ * tabular digits: proportional digits have different widths, so bitrate
+ * jumping from 4.9 to 11.1 shifted neighboring blocks on every update.
+ * **Channel** (`HudChannel`): link names, uppercase with letter spacing;
+ * read peripherally rather than closely, with spacing distinguishing them
+ * from adjacent numbers.
  *
- * Размер значков тоже один. Было три (12, 13, 14 dp) — базовые линии не
- * совпадали, и строка выглядела собранной из кусков.
+ * Icon size is shared too. Previously three sizes (12, 13, 14 dp) had mismatched
+ * baselines and made the row look pieced together.
  */
 private val HUD_ICON = 13.dp
 
-/** Промежуток между смысловыми группами HUD. Один на всю строку: до 15.09 тут
- *  жили вперемешку 4, 6 и 8 dp, и строка выглядела разреженной неровно. */
+/** Gap between semantic HUD groups. Shared across the row: before 15.09 it mixed
+ *  4, 6 and 8 dp gaps, making spacing look uneven. */
 private val HUD_GAP = 6.dp
 
-/** В HUD — только версия, без хэша сборки. Полная строка вида
- *  «0.1.3-beta-d6ba8e4» съедала четверть места, а хэш нужен ровно в одном
- *  случае — когда спрашивают, какая сборка стоит; он остался в «О приложении»
- *  и в развёрнутой панели. */
+/** HUD shows only the version, without the build hash. A full string such as
+ *  "0.1.3-beta-d6ba8e4" took a quarter of the space, while the hash is needed
+ *  only when identifying the installed build. It remains in About and the
+ *  expanded panel. */
 private fun shortVersion(versionName: String?): String =
     versionName.orEmpty().substringBefore('-')
 
@@ -2236,12 +2230,11 @@ private val HudLabel: TextStyle
 
 private val HudNumber: TextStyle
     @Composable get() = MaterialTheme.typography.labelSmall.copy(
-        // Только табличные цифры, БЕЗ моноширинного шрифта. Моноширинный решал
-        // ту же задачу — одинаковая ширина цифр, — но заодно растягивал всю
-        // строку: буквы в нём шире и промежутки между знаками больше, и HUD
-        // раздулся так, что в него перестало помещаться (владелец, 15.09:
-        // «текст какой-то странно широкий между символами»). `tnum` даёт
-        // фиксированную ширину цифр в обычном шрифте.
+        // Tabular digits only, WITHOUT a monospaced font. Monospace also gave
+        // equal-width digits but widened the entire row: wider letters and gaps
+        // expanded the HUD until content no longer fit (the owner, 15.09:
+        // "text has strangely wide spacing between characters"). `tnum` provides
+        // fixed-width digits in the normal font.
         fontFeatureSettings = "tnum",
     )
 
@@ -2265,17 +2258,16 @@ private fun channelColor(type: String): Color = when (type.lowercase()) {
 }
 
 /**
- * Имя канала для HUD: у соты — имя оператора, а не слово CELLULAR.
+ * HUD channel name: cellular shows the carrier name, not the word CELLULAR.
  *
- * Владелец, пожелание 5: «хочу, чтобы в HUD отображалось не тупо WIFI CELLULAR,
- * а имена сетей». У соты это бесплатно — `networkOperatorName` не требует
- * никаких разрешений. **Имени Wi-Fi-сети здесь намеренно нет:** SSID на
- * Android 10+ не отдаётся без `ACCESS_FINE_LOCATION` и включённых служб
- * определения местоположения, поэтому он отложен к работе над геолокацией,
- * а не выпрашивается ради одной строки в HUD.
+ * Owner request 5: "I want network names in the HUD, not just WIFI CELLULAR".
+ * Cellular provides this freely: `networkOperatorName` needs no permission.
+ * **Wi-Fi network names are deliberately absent:** on Android 10+, SSID requires
+ * `ACCESS_FINE_LOCATION` and enabled location services. This is deferred to
+ * location work rather than requesting permission for a single HUD line.
  *
- * При двух SIM показывается оператор той, через которую идут данные: имя берётся
- * у подписки по умолчанию, а бондинг всё равно использует её же.
+ * With two SIMs, show the data carrier: take the name from the default subscription,
+ * which bonding uses anyway.
  */
 @Composable
 private fun channelName(conn: app.brix.core.ConnectionStat): String {
@@ -2708,15 +2700,14 @@ private fun FractionalBox(
         Box(
             modifier = Modifier
                 .offset { IntOffset(boxX, boxY) }
-                // Высота — потолок, не фиксированный размер: свёрнутое
-                // содержимое (ChatPanel, header-only) должно занимать только
-                // свою собственную высоту, а не всю отведённую область с
-                // пустотой под ней.
-                // boxW/boxH — ПИКСЕЛИ (доля от container, который в пикселях),
-                // поэтому их нужно перевести в dp. Раньше здесь стояло
-                // `boxW.dp`, и на S21 (плотность 2.75) рамка была втрое больше
-                // своей доли кадра: человек выставлял окно «на пол-экрана», а
-                // сохранялось 0.157 ширины, и донат в эфире выходил крошечным.
+                // Height is a ceiling, not a fixed size: collapsed content
+                // (ChatPanel, header-only) should occupy only its own height,
+                // not the entire allotted area with empty space below.
+                // boxW/boxH are PIXELS (fractions of a pixel-sized container),
+                // so convert to dp. Previously `boxW.dp` made the frame on S21
+                // (density 2.75) three times its intended frame fraction:
+                // users set a "half-screen" window, but 0.157 width was saved,
+                // making donations tiny on stream.
                 .width(with(density) { boxW.toDp() })
                 .heightIn(max = with(density) { boxH.toDp() }),
         ) { content() }
@@ -2779,7 +2770,7 @@ private fun OverlayTuner(
         Box(
             modifier = Modifier
                 .offset { IntOffset(boxX, boxY) }
-                // Пиксели в dp — см. комментарий в FractionalBox.
+                // Pixels to dp: see the comment in FractionalBox.
                 .size(with(density) { boxW.toDp() }, with(density) { boxH.toDp() })
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
                 .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Фон окна тёмный, а не белый по умолчанию: до Android 12 заставку
-         рисует именно windowBackground, и светлая тема давала белую вспышку
-         перед первым кадром приложения. -->
+    <!-- Use a dark rather than the default white window background: before
+         Android 12, windowBackground draws the splash screen, and a light theme
+         caused a white flash before the app's first frame. -->
     <style name="Theme.Brix" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/ic_launcher_background</item>
     </style>

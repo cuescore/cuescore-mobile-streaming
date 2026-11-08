@@ -38,8 +38,8 @@ class SrtlaSender(
     private val limitSize = 1400 - 20 - 8 - 16
     private val mpegTsPacketizer = MpegTsPacketizer(psiManager)
     private var audioPacket: BasePacket = AacPacket(limitSize, psiManager)
-    // 2.8.1 разделил общий H26XPacket на два класса — пакет выбирается по кодеку
-    // при каждом setVideoInfo, как в их собственном SrtSender.
+    // Version 2.8.1 split the shared H26XPacket into two classes — choose the
+    // packet by codec on each setVideoInfo, as their own SrtSender does.
     private var videoPacket: BasePacket = H264Packet(limitSize, psiManager)
 
     private var videoCodec = VideoCodec.H264
@@ -98,8 +98,8 @@ class SrtlaSender(
         sendPackets(psiPacketsConfig)
 
         while (scope.isActive && running) {
-            // consumeFrame, а не queue.take(): очередь в 2.8.1 закрыта, а буфер кадра
-            // после обработки возвращается в их пул — отсюда и экономия на мусоре.
+            // Use consumeFrame, not queue.take(): the queue is private in 2.8.1,
+            // and the frame buffer returns to their pool after processing, reducing garbage.
             consumeFrame { mediaFrame ->
                 getMpegTsPackets(mediaFrame) { mpegTsPackets ->
                     val isKey = mpegTsPackets[0].isKey
@@ -114,11 +114,11 @@ class SrtlaSender(
     private fun sendPackets(packets: List<MpegTsPacket>) {
         if (packets.isEmpty()) return
         val now = System.nanoTime() / 1000
-        // Пока нет соединения, enqueue всё равно выбросит пакет — а мы уже
-        // выделили и скопировали его. Конвейер при переподключении намеренно
-        // не останавливается, так что в тоннеле это минуты по ~2 МБ/с мусора
-        // (аудит 23.09). send() зовём всё равно: он же переотправляет
-        // CONCLUSION и следит за таймаутом рукопожатия.
+        // Without a connection, enqueue would discard the packet after we've
+        // already allocated and copied it. The pipeline intentionally keeps
+        // running during reconnects, which otherwise means minutes of ~2 MB/s
+        // garbage in the tunnel (23.09 audit). Still call send(): it also
+        // retransmits CONCLUSION and watches the handshake timeout.
         if (!srtSender.isConnectedOrProvisional()) {
             srtSender.send(now)
             return

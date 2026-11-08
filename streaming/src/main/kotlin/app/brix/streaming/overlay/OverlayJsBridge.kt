@@ -37,32 +37,32 @@ import org.json.JSONArray
  */
 class OverlayJsBridge(
     private val controller: OverlayController,
-    /** Соединение виджета со своим сервером: открыт ли хоть один сокет. */
+    /** Widget connection to its server: whether at least one socket is open. */
     private val onConnection: (Boolean) -> Unit = {},
 ) {
     @Volatile
     var enabled = true
 
-    /** Хост страницы виджета, снимается при её загрузке. */
+    /** Widget page host, captured when the page loads. */
     @Volatile
     private var pageHost: String? = null
 
     /**
-     * Пускать ли эту ссылку в эфир.
+     * Whether to allow this URL into the stream.
      *
-     * `addJavascriptInterface` не различает origin: мост виден и самой странице
-     * виджета, и любому её стороннему iframe — рекламному, счётчику. А
-     * [onAlert] рисует произвольную картинку и играет произвольный звук ПРЯМО
-     * В ЭФИР. Полноценно закрыть это можно только переездом на
-     * `addWebMessageListener`, где origin задаётся явно, но он требует сменить
-     * протокол вызова и переделать оба внедряемых скрипта — на живой,
-     * отлаженной в поле фиче это отдельная работа.
+     * `addJavascriptInterface` does not distinguish origins: the bridge is
+     * visible to the widget page and any third-party iframe, including ads
+     * and trackers. [onAlert] displays arbitrary images and plays arbitrary
+     * audio DIRECTLY ON STREAM. Fully addressing this requires migrating to
+     * `addWebMessageListener` with explicit origins, changing the call protocol
+     * and rewriting both injected scripts. For a live, field-tested feature
+     * that is a separate task.
      *
-     * Пока сужаем не источник вызова, а последствия: медиа обязано лежать на
-     * домене самого виджета. Сравнение по двум последним меткам хоста, потому
-     * что картинки и звуки часто уезжают на поддомен-CDN
-     * (`cdn.donationalerts.com` при странице на `donationalerts.com`), и
-     * равенство хостов ломало бы рабочие алерты.
+     * For now restrict consequences rather than call origins: media must live
+     * on the widget's domain. Compare the last two hostname labels because
+     * images and audio often use a CDN subdomain (`cdn.donationalerts.com`
+     * for a page on `donationalerts.com`); exact host equality would
+     * break working alerts.
      */
     private fun allowedMediaUrl(url: String): Boolean {
         val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return false
@@ -97,18 +97,17 @@ class OverlayJsBridge(
     var captionVisible = true
 
     /**
-     * Состояние сокета виджета: сообщает внедрённый скрипт, подменивший
-     * `WebSocket` и `EventSource`.
+     * Widget socket state, reported by the injected script wrapping
+     * `WebSocket` and `EventSource`.
      *
-     * Раньше это состояние вычитывалось из текста консоли («WS: connected»),
-     * то есть было подгонкой под формулировки DonationAlerts: у DonatePay
-     * (Centrifugo) и любого другого сервиса индикатор просто не загорался,
-     * а смена формулировки ломала бы и DonationAlerts. Подмена самого API
-     * работает у всех и не зависит от слов.
+     * Previously parsed from console text ("WS: connected"), tailored to
+     * DonationAlerts wording. DonatePay (Centrifugo) and other services never
+     * lit the indicator; wording changes would break DonationAlerts too.
+     * Wrapping the API itself works across services regardless of wording.
      */
-    /** Виджет убирается с экрана. Уничтожение WebView закрывает его сокеты,
-     *  их обработчики `close` зовут [onSocketState] уже ПОСЛЕ того, как метка
-     *  сервиса убрана из HUD, — и она возвращалась погашенной. */
+    /** Widget removed from the screen. WebView destruction closes its sockets;
+     *  their `close` handlers call [onSocketState] AFTER the service marker is
+     *  removed from the HUD, causing it to return in a disconnected state. */
     @Volatile
     var detached = false
 
@@ -198,8 +197,8 @@ class OverlayJsBridge(
         }
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
-                // Хост главного фрейма — эталон, с которым сверяется медиа
-                // алертов (см. allowedMediaUrl).
+                // Main-frame host is the reference for validating alert media
+                // (see allowedMediaUrl).
                 url?.let { pageHost = runCatching { java.net.URI(it).host }.getOrNull() ?: pageHost }
                 android.util.Log.d("Overlay", "bridge: page finished $url — injecting observer")
                 view?.evaluateJavascript(ALERT_OBSERVER_JS, null)
@@ -298,11 +297,11 @@ class OverlayJsBridge(
                 return sm;
             }
 
-            // ---- Соединение виджета со своим сервером ----
-            // Подменяем WebSocket и EventSource, а не читаем консоль: так
-            // состояние видно у любого сервиса (DonationAlerts, DonatePay на
-            // Centrifugo, iHAQ и прочие), и оно не зависит от формулировок в
-            // логах. Считаем «подключено», пока открыт хоть один сокет.
+            // ---- Widget connection to its server ----
+            // Wrap WebSocket and EventSource instead of reading the console:
+            // exposes state for any service (DonationAlerts, DonatePay with
+            // Centrifugo, iHAQ and others), independent of log wording.
+            // Consider it connected while at least one socket is open.
             try {
                 window.__brixSockets = 0;
                 var report = function(){
@@ -312,9 +311,9 @@ class OverlayJsBridge(
                     var RealWS = window.WebSocket;
                     var WrappedWS = function(url, protocols){
                         var ws = protocols === undefined ? new RealWS(url) : new RealWS(url, protocols);
-                        // Считаем по флагу НА СОКЕТЕ, а не просто по событиям:
-                        // 'error' до 'open' иначе списывал бы чужой открытый
-                        // сокет, и метка гасла при живом соединении.
+                        // Count using a flag ON THE SOCKET, not just events:
+                        // otherwise 'error' before 'open' would subtract another
+                        // open socket and turn off the marker for a live connection.
                         var up = function(){
                             if (ws.__brixOpen) return;
                             ws.__brixOpen = true;
@@ -344,10 +343,10 @@ class OverlayJsBridge(
                     var RealES = window.EventSource;
                     var WrappedES = function(url, config){
                         var es = config === undefined ? new RealES(url) : new RealES(url, config);
-                        // EventSource сам переподключается: после разрыва он
-                        // снова шлёт 'open'. Без флага на объекте счётчик от
-                        // каждого переподключения рос, и метка навсегда
-                        // застревала в «подключено».
+                        // EventSource reconnects itself and emits 'open' again
+                        // after a disconnect. Without an object flag, every
+                        // reconnect incremented the count and permanently
+                        // stuck the marker in the connected state.
                         es.addEventListener('open', function(){
                             if (es.__brixOpen) return;
                             es.__brixOpen = true;

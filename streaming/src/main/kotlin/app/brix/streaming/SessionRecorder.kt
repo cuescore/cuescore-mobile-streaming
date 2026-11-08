@@ -14,26 +14,26 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Запись сессии эфира в CSV-файл на телефоне: мощность, температура, тепловой
- * статус и цифры транспорта, по строке в секунду.
+ * Recording a stream session to a CSV file on the phone: power, temperature, thermal
+ * status, and transport metrics, one row per second.
  *
- * Зачем отдельно от `BrixStat` в logcat: все тепловые замеры проекта сделаны
- * с телефоном на кабеле, от батареи, по 5-15 минут. Реальный отказ выглядит
- * иначе — двухчасовой выход с пауэрбанком, без adb. Логи logcat в этом
- * сценарии недоступны вовсе, поэтому увидеть настоящую кривую нагрева было
- * неоткуда.
+ * Why separate from `BrixStat` in logcat: all thermal measurements in the project were taken
+ * with the phone plugged in, on battery, for 5–15 minutes. A real failure looks
+ * different—a two-hour stream with a power bank, without adb. In this
+ * scenario, logcat is completely unavailable, so there was no way to see the real heating curve.
+ * .
  *
- * Ток заряда на этом телефоне (~5.5 Вт) сопоставим с мощностью всего эфира
- * (5.31 Вт), поэтому `plugged` и знак `curr_ua` тут не украшение, а главная
- * непроверенная переменная: питание от повербанка добавляет тепло поверх
- * съёмки, и ни один замер этого не учитывал.
+ * Charging power on this phone (~5.5 W) is comparable to the power of the entire stream
+ * (5.31 W), so `plugged` and the sign of `curr_ua` are not incidental details but the main
+ * unchecked variable: power from a power bank adds heat on top of
+ * filming, and none of the measurements accounted for this.
  *
- * **Урок сессии 07.09.** Первая же полевая запись оказалась сделана на кабеле,
- * но пометила себя автономной, и колонка ватт была нулевой от начала до конца.
- * Отсюда два правила, зашитые ниже: внешнее питание определяется по
- * `EXTRA_PLUGGED` (полный телефон на кабеле рапортует `BATTERY_STATUS_FULL`,
- * а не `CHARGING`), а ватты на внешнем питании не пишутся вовсе — пустая
- * клетка честнее нуля, потому что ноль читается как измерение.
+ * **Lesson from the 07.09 session.** The very first field recording turned out to have been made while plugged in,
+ * but marked itself as battery-powered, and the watts column was zero from start to finish.
+ * Hence the two rules implemented below: external power is determined by
+ * `EXTRA_PLUGGED` (a fully charged phone while plugged in reports `BATTERY_STATUS_FULL`,
+ * not `CHARGING`), and watts are not written at all on external power—the empty
+ * cell is more honest than zero, because zero is interpreted as a measurement.
  */
 internal class SessionRecorder(private val appContext: Context) {
 
@@ -54,11 +54,11 @@ internal class SessionRecorder(private val appContext: Context) {
         val file = File(dir, "session-$stamp.csv")
         runCatching {
             val w = BufferedWriter(FileWriter(file, true))
-            // Строка-заметка перед заголовком: то, что за сессию не меняется —
-            // энкодер, кодек, разрешение. Держать это отдельной колонкой в каждой
-            // секунде значило бы дублировать одно и то же тысячу раз, а без него
-            // чужой отчёт нечем объяснить: «почему у него 9 Вт» начинается с
-            // вопроса «а что он вообще кодировал и чем».
+            // Note line before the header: values that do not change during a session—
+            // encoder, codec, resolution. Keeping these as separate columns in every
+            // second would duplicate the same information a thousand times, and without it
+            // a report from someone else is impossible to explain: “why is theirs 9 W?” starts with
+            // the question “what were they encoding, and with what?”
             if (!note.isNullOrBlank()) {
                 w.write("# $note")
                 w.newLine()
@@ -84,9 +84,9 @@ internal class SessionRecorder(private val appContext: Context) {
     }
 
     /**
-     * @param phase фаза сессии, как её видит [StatsReporter].
-     * @param transport уже собранные цифры транспорта, в порядке колонок
-     *   [HEADER] после `charging`.
+     * @param phase session phase, as seen by [StatsReporter].
+     * @param transport collected transport metrics, in the order of the columns
+     *   [HEADER] after `charging`.
      */
     fun record(phase: String, reconnects: Int, transport: String) {
         val w = writer ?: return
@@ -98,43 +98,43 @@ internal class SessionRecorder(private val appContext: Context) {
             ?: Int.MIN_VALUE
         val tempC = if (tempTenths != Int.MIN_VALUE) tempTenths / 10f else Float.NaN
         val voltMv = battery?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) ?: -1
-        // Внешнее питание определяется по EXTRA_PLUGGED, а НЕ по
-        // EXTRA_STATUS == BATTERY_STATUS_CHARGING. Полный телефон на кабеле
-        // рапортует BATTERY_STATUS_FULL, и старая проверка записывала его как
-        // «от батареи»: в сессии 07.09 все 664 строки помечены charging=0,
-        // при этом заряд ни разу не ушёл со 100%, а ток местами
-        // ПОЛОЖИТЕЛЬНЫЙ (+364), то есть тёк в батарею. Весь лог выглядел
-        // автономным замером, не будучи им, и выводы по мощности из него
-        // делались неверные. EXTRA_PLUGGED покрывает и AC, и USB, и
-        // беспроводную, и док.
+        // External power is determined by EXTRA_PLUGGED, NOT by
+        // EXTRA_STATUS == BATTERY_STATUS_CHARGING. A fully charged phone while plugged in
+        // reports BATTERY_STATUS_FULL, and the old check recorded it as
+        // “on battery”: in the 07.09 session, all 664 rows were marked charging=0,
+        // although the charge never dropped below 100%, and current was sometimes
+        // POSITIVE (+364), meaning it was flowing into the battery. The entire log looked
+        // like a battery-powered measurement when it was not, and power conclusions drawn from it
+        // were wrong. EXTRA_PLUGGED covers AC, USB,
+        // wireless, and dock power.
         val plugged = (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
 
-        // Сырой ток пишется как есть, вместе с производными ваттами: часть
-        // прошивок Samsung отдаёт CURRENT_NOW в миллиамперах вместо
-        // микроампер, и по расхождению этих двух колонок это видно сразу,
-        // а не после того, как выводы уже сделаны.
+        // Raw current is written as-is, along with derived watts: some
+        // Samsung firmware reports CURRENT_NOW in milliamps instead of
+        // microamps, and the discrepancy between these two columns makes this immediately visible,
+        // rather than after conclusions have already been drawn.
         val currUa = runCatching {
             val bm = appContext.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
             bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
         }.getOrDefault(Int.MIN_VALUE)
-        // На внешнем питании ватты не считаем вовсе. BatteryManager отдаёт
-        // ЧИСТЫЙ ток батареи, а он на кабеле близок к нулю — нагрузку несёт
-        // зарядник, — так что число получается не маленькое, а
-        // бессмысленное: в сессии 07.09 колонка watts равна 0.00 во всех 664
-        // строках при живом эфире на 2.5 Мбит/с. Пустая клетка честнее нуля:
-        // ноль читается как измерение, пустота — как «мерить было нельзя».
+        // We do not calculate watts at all on external power. BatteryManager reports
+        // NET battery current, which is close to zero while plugged in—the charger
+        // is carrying the load—so the resulting number is not small but
+        // meaningless: in the 07.09 session, the watts column is 0.00 in all 664
+        // rows while streaming at 2.5 Mbps. An empty cell is more honest than zero:
+        // zero is interpreted as a measurement, emptiness as “measurement was not possible.”
         //
-        // Единицы тока определяются по величине, а не берутся на веру.
-        // `BATTERY_PROPERTY_CURRENT_NOW` документирован как микроамперы, но
-        // часть прошивок Samsung отдаёт миллиамперы — и S21 из их числа:
-        // в трёх замерах 13.09 на живом эфире модуль тока был 700..3200, что
-        // в микроамперах означало бы 3 мА и 0.01 Вт на весь телефон с
-        // работающей камерой. Проверка по разряду батареи (7-13% за десять
-        // минут) дала 6-10 Вт, то есть значения действительно в миллиамперах.
+        // Current units are determined by magnitude, not taken on faith.
+        // `BATTERY_PROPERTY_CURRENT_NOW` is documented as microamps, but
+        // some Samsung firmware reports milliamps—and the S21 is one of them:
+        // in three measurements on 13.09 during a live stream, the current magnitude was 700..3200, which
+        // in microamps would mean 3 mA and 0.01 W for the entire phone with
+        // camera running. A check based on battery drain (7–13% in ten
+        // minutes) yielded 6–10 W, confirming that the values really are in milliamps.
         //
-        // Порог в 20 000 разделяет случаи с запасом в два порядка: настоящие
-        // микроамперы при эфире это 1-3 МИЛЛИОНА единиц, миллиамперы — тысячи.
-        // Попасть в зазор нечем.
+        // The 20,000 threshold separates the cases by two orders of magnitude: actual
+        // microamps while streaming are 1–3 MILLION units; milliamps are in the thousands.
+        // There is no way to fall into the gap.
         val currAbs = Math.abs(currUa.toDouble())
         val currentMicroAmps = if (currAbs < 20_000) currAbs * 1000.0 else currAbs
         val watts = if (!plugged && currUa != Int.MIN_VALUE && voltMv > 0) {
@@ -172,9 +172,9 @@ internal class SessionRecorder(private val appContext: Context) {
             transport,
         ).joinToString(",")
 
-        // Сброс на диск после каждой строки, без буферизации: телефон в этом
-        // сценарии убивает система по перегреву — то есть ровно в тот момент,
-        // ради которого запись и ведётся. Буфер съел бы именно хвост.
+        // Flush to disk after every row, without buffering: in this
+        // scenario the system kills the phone due to overheating—exactly when
+        // the recording is being made for. A buffer would have swallowed precisely the tail.
         runCatching {
             w.write(row)
             w.newLine()
@@ -193,10 +193,10 @@ internal class SessionRecorder(private val appContext: Context) {
 
     private companion object {
         const val TAG = "BrixSession"
-        // Колонка называется `plugged`, а не `charging`: она отвечает на
-        // вопрос «годится ли эта строка для выводов о мощности», а не
-        // «идёт ли зарядка». Разница не словесная — именно она испортила
-        // разбор сессии 07.09.
+        // The column is called `plugged`, not `charging`: it answers the
+        // question “is this row suitable for drawing conclusions about power,” not
+        // “is it charging.” The difference is not just wording—it is exactly what spoiled the
+        // analysis of the 07.09 session.
         const val HEADER = "t_s,wall,phase,therm,batt_pct,batt_temp_c,curr_ua,volt_mv,watts," +
             "plugged,reconnects,srt_conn,srt_rtt_ms,srt_inflight,srt_dropped,rate_mbps,abr_kbps,links"
     }

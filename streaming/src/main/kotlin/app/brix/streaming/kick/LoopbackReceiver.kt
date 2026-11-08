@@ -18,10 +18,11 @@ object LoopbackReceiver {
         if (url.encodedPath != "/callback") return null
         val code = url.queryParameter("code")
         val error = url.queryParameter("error")
-        // Запрос к /callback без code и без error — не ответ сервера входа, а
-        // чей-то посторонний заход на порт (сканер, предзагрузчик). Раньше он
-        // завершал приём, сокет закрывался, и настоящий редирект браузера
-        // получал отказ соединения (аудит 23.09). Отвечаем 404 и ждём дальше.
+        // A request to /callback without code or error isn't an auth-server
+        // response; it's an unrelated request to the port (a scanner, prefetcher).
+        // Previously it ended the listener and closed the socket, so the real
+        // browser redirect got a connection refusal (Sep 23 audit). Return 404 and
+        // keep waiting.
         if (code == null && error == null) return null
         return OAuthCallback(code, url.queryParameter("state"), error)
     }

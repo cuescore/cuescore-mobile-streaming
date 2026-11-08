@@ -51,10 +51,10 @@ class SrtSender(
     private var connectedFired = false
     private var conclusionSentEnteredTime = 0L
     private var lastProvisionalRetransmitUs = 0L
-    // Пишется только под монитором, но читается без него в isConnected() и
-    // isConnectedOrProvisional() — из корутины статистики и из сторожа таймаута
-    // соединения. Соседние геттеры (rttMs, packetsInFlightCount, sendRateMbps,
-    // droppedPackets) все @Synchronized, эти два из правила выпадали.
+    // Written only under the monitor, but read without it in isConnected() and
+    // isConnectedOrProvisional() — from the stats coroutine and the connection timeout
+    // watchdog. The neighboring getters (rttMs, packetsInFlightCount, sendRateMbps,
+    // droppedPackets) are all @Synchronized; these two had fallen outside that rule.
     @Volatile
     private var state = SrtSenderState.DISCONNECTED
     private val packetsToSend = ArrayDeque<SrtDataPacket>()
@@ -65,41 +65,41 @@ class SrtSender(
     private var rttUs = 0L
 
     /**
-     * Последний номер полного ACK, на который уже ушёл ACKACK, и последний
-     * подтверждённый номер пакета. Сервер SRTLA рассылает каждый ACK по ВСЕМ
-     * линкам группы (PROTOCOL_SPEC §2), и мы обрабатывали каждую копию: N
-     * проходов removeIf по таблице и N ACKACK на один номер — ~90 лишних
-     * sendto в секунду на двух линках (аудит 23.09). Приёмнику дубль ACKACK
-     * не нужен: по номеру он его уже не найдёт.
+     * The last full ACK number already answered with ACKACK, and the last
+     * confirmed packet number. The SRTLA server broadcasts each ACK on ALL
+     * group links (PROTOCOL_SPEC §2), and we processed every copy: N
+     * passes of removeIf over the table and N ACKACKs for one number — about 90 extra
+     * sendto calls per second over two links (audit 23.09). The receiver does not need a
+     * duplicate ACKACK: it can no longer find that number.
      */
     private var lastAckAckNumber = -1L
     private var lastAckedSn = -1L
 
-    /** Log.isLoggable — нативное чтение системного свойства; на каждый ACK
-     *  (~180/с с дублями) это заметно. Перечитываем раз в секунду, как уже
-     *  сделано в SrtlaConnection. */
+    /*Log.isLoggable reads a native system property; doing this for every ACK
+     *  (~180/s with duplicates) is noticeable. Read it once per second, as already
+     *  done in SrtlaConnection. */
     private var verboseAcks = false
     private var verboseCheckedAtUs = 0L
     private var latestReceivedPacketTime = 0L
     private var latestOutputPacketsTime = 0L
 
     /**
-     * Пакеты, готовые к отправке. Собираются под монитором SrtSender, а
-     * записываются в сокет уже без него.
+     * Packets ready to send. Collected under the SrtSender monitor, then
+     * written to the socket without it.
      *
-     * Зачем: запись шла прямо из синхронизированных методов, то есть системный
-     * вызов отправки делался, держа общий монитор. За него дерутся поток медиа
-     * (`enqueue` ~1300 раз/с, `send` ~75 раз/с) и оба потока чтения (`input`).
-     * Пока один пишет в сокет, остальные стоят. Замер 31.08: потоки чтения по
-     * ~25% ядра каждый при кодировании в 22%.
+     * Why: writes used to happen directly inside synchronized methods, so the system
+     * send call held the shared monitor. It is contended by the media thread
+     * (`enqueue` ~1300 times/s, `send` ~75 times/s) and both read threads (`input`).
+     * While one writes to the socket, all the others wait. Measurement on 31.08: read threads at
+     * ~25% CPU each while encoding at 22%.
      *
-     * Два буфера меняются местами, чтобы не аллоцировать на каждый сброс.
+     * The two buffers swap places to avoid allocating on every flush.
      */
     private var pendingOutput = ArrayList<ByteArray>()
     private var flushBuffer = ArrayList<ByteArray>()
 
-    /** Отдельная блокировка сброса: сериализует запись в сокет (порядок пакетов
-     *  обязан сохраниться), не блокируя при этом работу с состоянием. */
+    /*A separate flush lock serializes writes to the socket (packet order
+     *  must be preserved) without blocking state operations. */
     private val outputLock = Any()
     private var startTime = 0L
     private var numberOfBytesSent = 0L
@@ -112,12 +112,12 @@ class SrtSender(
     }
 
     private fun startLocked() {
-        // streamId НЕ логируем целиком: у SRTLA туда уходит ?srtauth=<ключ>,
-        // то есть ключ трансляции. Тег «Srtla» входит в белый список логов,
-        // которые попадают в выгрузку диагностики, а её человек отдаёт чужим
-        // людям — 14.09 мы вычистили ключи из настроек, а этот путь пропустили.
-        // Для отладки хватает факта наличия и длины: по ним видно, подставился
-        // ли streamId вообще и не обрезался ли он.
+        // Do NOT log the full streamId: for SRTLA it contains ?srtauth=<key>,
+        // which is the stream key. The “Srtla” tag is on the allowlist for logs
+        // included in diagnostic reports, which people share with others — on 14.09 we removed
+        // keys from settings but missed this path.
+        // Presence and length are enough for debugging: they show
+        // whether streamId was supplied and whether it was truncated.
         android.util.Log.w(
             "Srtla",
             "srt-sender: start() streamId: есть=${!streamId.isNullOrEmpty()} длина=${streamId?.length ?: 0}",
@@ -201,11 +201,11 @@ class SrtSender(
         checkIfConnected(now)
         keepConclusionRetransmit(now)
         if (state != SrtSenderState.CONNECTED && state != SrtSenderState.CONCLUSION_SENT) return
-        // dropOldPackets ДО насоса: раньше насос выпускал только часть очереди,
-        // и до отбраковки доживало то, что он не успел отправить. Теперь он
-        // опустошает очередь целиком, поэтому после него отбраковывать нечего —
-        // устаревшее медиа просто ушло бы в эфир. Сначала выбрасываем то, что
-        // приёмнику уже бесполезно, потом отправляем остальное.
+        // dropOldPackets runs BEFORE the pump: previously the pump emitted only part of the queue,
+        // so anything it had not sent survived until the drop check. Now it
+        // empties the queue completely, so nothing remains to drop afterward —
+        // stale media would simply go out on the live stream. Drop what is already useless
+        // to the receiver first, then send the rest.
         dropOldPackets(now)
         outputPackets(now)
         enforceFlowWindow()
@@ -298,39 +298,39 @@ class SrtSender(
     }
 
     /**
-     * Выпустить всё, что накопилось: сначала назревшие повторы, затем новые
-     * пакеты.
+     * Flush everything queued: first the due retransmissions, then new
+     * packets.
      *
-     * Прежняя версия выпускала не больше десяти пакетов за проход
-     * (`count = maxOf(count / 10, minOf(count, 10))`) и держала таймер на 2 мс.
-     * `send()` зовётся из потока медиа около 75 раз в секунду, а пакетов на
-     * такой битрейт приходится ~1300 в секунду, то есть по 17 на вызов —
-     * десяти не хватало, и насос дополнительно дёргали из ОБОИХ потоков чтения,
-     * на каждый входящий управляющий пакет. Своё медиа отправлялось в такт
-     * чужим подтверждениям, а запись в сокет шла под общим монитором
-     * SrtSender, за который дрались три потока (замер 31.08: отправка одного
-     * пакета ~90 мкс, потоки чтения по ~25% ядра каждый).
+     * The old version emitted at most ten packets per pass
+     * (`count = maxOf(count / 10, minOf(count, 10))`) and used a 2 ms timer.
+     * `send()` is called from the media thread about 75 times per second, while this bitrate
+     * requires ~1300 packets per second, or 17 per call — ten was not enough, and the pump was
+     * also triggered from BOTH read threads,
+     * for every incoming control packet. Our media was sent in sync with
+     * other peers’ acknowledgements, and socket writes held the shared SrtSender monitor,
+     * contended by three threads (31.08 measurement: one packet takes ~90
+     * µs to send; each read thread uses ~25% CPU).
      *
-     * Объём ограничен снимком очередей на входе: если что-то попадёт в очередь
-     * повторов уже во время прохода, оно уйдёт следующим, а не закольцует нас.
+     * The amount is bounded by the queue snapshot at entry: anything added to the retransmit
+     * queue during the pass goes out on the next pass instead of looping forever.
      */
     private fun outputPackets(now: Long) {
-        // Повторы идут первыми и все за один проход по очереди.
+        // Retransmissions go first, all in one pass through the queue.
         //
-        // Раньше это стоило квадрата. `retransmitPacketIfNeeded` отправлял ОДИН
-        // пакет, но ради этого мог просканировать очередь целиком (до 1000),
-        // выложить пропущенные в новый ArrayList с упаковкой в Long и вернуть
-        // обратно через addAll — и так на каждый пакет за проход насоса. Пока
-        // `isSnAcked` был сломан (до e591dfe), повторы фактически не работали и
-        // дефект спал: пересылалось 0–3 пакета в секунду. После починки стало
-        // 3–95, то есть путь стал горячим, а стреляет он ровно при потерях —
-        // когда запаса и так нет.
+        // This used to be quadratic. `retransmitPacketIfNeeded` sent ONE
+        // packet, but could scan the entire queue (up to 1000) to do so,
+        // copy skipped entries to a new ArrayList while boxing them as Longs and return
+        // them with addAll — once per packet in a pump pass. While
+        // `isSnAcked` was broken (until e591dfe), retransmissions effectively did not work and
+        // the defect stayed hidden: only 0–3 packets per second were resent. After the fix, that became
+        // 3–95, making this a hot path, and it runs exactly during loss —
+        // when there is least headroom.
         //
-        // Теперь один проход: пропущенные остаются в очереди НА СВОИХ МЕСТАХ
-        // (порядок номеров больше не перемешивается), лишних аллокаций нет.
+        // Now there is one pass: skipped entries remain in the queue IN THEIR ORIGINAL POSITIONS
+        // (packet numbers are no longer reordered), with no extra allocations.
         retransmitEligible(now)
-        // Объём ограничен снимком очереди на входе: то, что попадёт в неё уже
-        // во время прохода, уйдёт следующим, а не закольцует нас.
+        // The amount is bounded by the queue snapshot at entry: anything added to it
+        // during the pass goes out on the next pass instead of looping forever.
         var budget = packetsToSend.size
         while (budget-- > 0) {
             val packet = packetsToSend.removeFirstOrNull() ?: return
@@ -339,12 +339,12 @@ class SrtSender(
     }
 
     /**
-     * Переслать все номера, которым это уже можно, за один проход.
+     * Retransmit all numbers that are eligible, in one pass.
      *
-     * Номера, чей повтор ещё внутри окна RTT, остаются в очереди и НЕ
-     * выбрасываются: иначе повторный NAK, пришедший внутри одного RTT, молча
-     * терял бы пакет из очереди и его не переслали бы никогда (C4). Номер,
-     * которого больше нет в полёте, уже подтверждён — запрос протух, снимаем.
+     * Numbers whose retransmission is still within the RTT window remain in the queue and are NOT
+     * discarded: otherwise a repeated NAK arriving within one RTT would silently
+     * lose the packet from the queue, and it would never be retransmitted (C4). A number
+     * that is no longer in flight has already been acknowledged — remove the stale request.
      */
     private fun retransmitEligible(now: Long) {
         if (retransmitSequenceNumbers.isEmpty()) return
@@ -375,7 +375,7 @@ class SrtSender(
         numberOfBytesSent += packet.size + 28
     }
 
-    /** Отправить накопленное. Вызывается ТОЛЬКО вне монитора SrtSender. */
+    /*Send the queued data. Called ONLY outside the SrtSender monitor. */
     private fun flushOutput() {
         synchronized(outputLock) {
             while (true) {
@@ -519,17 +519,17 @@ class SrtSender(
             Srt.PacketType.ACK.rawValue -> handleAckPacket(packet, now)
             Srt.PacketType.NAK.rawValue -> handleNakPacket(packet)
             Srt.PacketType.SHUTDOWN.rawValue -> {
-                // Приёмник закрыл сессию сам. Разбирая лог, это надо отличать
-                // от нашего таймаута по тишине: причины разные. Чаще всего так
-                // выглядит занятый ключ потока — на сервере уже есть издатель
-                // с тем же streamid, и новую сессию он убивает сразу после
-                // рукопожатия.
+                // The receiver closed the session itself. When analyzing the log, distinguish this
+                // from our inactivity timeout: the causes differ. Most often this looks like a stream key
+                // already in use — there is already a publisher on the server
+                // with the same streamid, and it terminates the new session immediately after
+                // the handshake.
                 android.util.Log.w("Srtla", "srt-sender: SHUTDOWN от приёмника state=$state")
                 setDisconnected()
             }
         }
-        // Насос отсюда НЕ запускается: см. outputPackets. Отправка идёт в такт
-        // медиа, а не в такт входящим подтверждениям.
+        // Do NOT start the pump from here: see outputPackets. Sending is paced by
+        // media, not incoming acknowledgements.
     }
 
     private fun handleHandshakePacket(packet: ByteArray) {
@@ -658,7 +658,7 @@ class SrtSender(
         if (packet.size < 20) return
         val lastAcknowledgedSequenceNumber = readUInt32(packet, 16)
         val before = packetsInFlight.size
-        // Копия того же ACK с другого линка: подтверждать нечего нового.
+        // A copy of the same ACK from another link: nothing new to acknowledge.
         if (lastAcknowledgedSequenceNumber != lastAckedSn) {
             removeAckedPackets(lastAcknowledgedSequenceNumber)
             lastAckedSn = lastAcknowledgedSequenceNumber
@@ -670,11 +670,11 @@ class SrtSender(
         // forever and AdaptiveBitrate.update() bails on its first line, so
         // ABR silently never runs.
         //
-        // Эти две строки писались безусловно, пока искали баг с socket id. Баг
-        // найден (5953995), а строки остались: ~83 ACK/с × 2 строки со сборкой
-        // текста и вызовом в системный лог. Замер 31.08 показал, что обработка
-        // пакетов жжёт втрое больше процессора, чем сам энкод, — оставлять
-        // такое в горячем пути нельзя. Под флагом диагностика доступна как была.
+        // These two lines were unconditional while we tracked a socket-id bug. The bug
+        // was found (5953995), but the lines remained: ~83 ACK/s × 2 lines, including text construction
+        // and a system-log call. The 31.08 measurement showed packet handling
+        // using three times more CPU than encoding — this cannot stay on the
+        // hot path. Diagnostics remain available under the flag.
         if (now - verboseCheckedAtUs > 1_000_000L) {
             verboseCheckedAtUs = now
             verboseAcks = android.util.Log.isLoggable("Srtla", android.util.Log.VERBOSE)
@@ -712,20 +712,20 @@ class SrtSender(
         ) {
             latestMbpsSendRate = 1.0
         }
-        // Отдаём интервальную скорость как есть, без своего EWMA.
+        // Return the interval rate as-is, without our own EWMA.
         //
-        // Раньше здесь стояло `0.7 * mbpsSendRate + 0.3 * latest`, и ряд
-        // фильтровался ДВАЖДЫ: сначала тут, потом ещё раз в
-        // AdaptiveBitrate.updateThroughput. У эталона (belacoder) ступень одна —
-        // `srt_bstats(sock, &stats, 1)` отдаёт мгновенную скорость за интервал,
-        // а сглаживает уже сам регулятор. Наш расчёт выше и есть тот самый
-        // интервальный замер (гейт durationUs <= 200_000 задаёт интервал), так
-        // что второй фильтр был лишним: он добавлял запаздывание, из-за
-        // которого throughput отставал вниз, прижимал порог Th2 и подталкивал
-        // регулятор резать битрейт.
+        // Previously this used `0.7 * mbpsSendRate + 0.3 * latest`, and the series
+        // was filtered TWICE: first here, then again in
+        // AdaptiveBitrate.updateThroughput. The reference (belacoder) has one stage —
+        // `srt_bstats(sock, &stats, 1)` returns the instantaneous rate over an interval,
+        // and the controller does the smoothing. Our calculation above is that same
+        // interval measurement (the durationUs <= 200_000 gate sets the interval), so
+        // the second filter was redundant: it added lag, causing throughput to fall slowly,
+        // lowering the Th2 threshold and pushing the controller to
+        // cut the bitrate.
         //
-        // Клампа в 1.0 Мбит/с выше ОСТАЁТСЯ: она ставилась, чтобы разорвать эту
-        // же петлю, и снимать её заодно означало бы менять две вещи разом.
+        // The 1.0 Mbit/s clamp ABOVE REMAINS: it was added to break this
+        // same feedback loop, and removing it at the same time would change two things at once.
         mbpsSendRate = latestMbpsSendRate
     }
 

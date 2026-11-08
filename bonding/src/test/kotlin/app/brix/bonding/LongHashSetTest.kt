@@ -7,10 +7,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Открытая адресация с удалением сдвигом — место, где легко посадить тонкий
- * баг: элемент становится ненаходимым, потому что в его цепочке пробирования
- * образовалась дыра. Поэтому основная проверка здесь — случайные операции
- * против эталонного HashSet, а не отдельные случаи.
+ * Open addressing with backward-shift deletion is an easy place to introduce a
+ * subtle bug: an element becomes unfindable because a gap appears in its probe
+ * chain. That's why the main check here is random operations against a reference
+ * HashSet, rather than individual cases.
  */
 class LongHashSetTest {
 
@@ -20,7 +20,7 @@ class LongHashSetTest {
         val ours = LongHashSet(16)
         val ref = HashSet<Long>()
         repeat(200_000) {
-            // Узкий диапазон: коллизии и повторные вставки нужны намеренно.
+            // Narrow range: collisions and repeated inserts are intentional.
             val v = rnd.nextLong(0, 3000)
             when (rnd.nextInt(3)) {
                 0 -> assertEquals("add($v)", ref.add(v), ours.add(v))
@@ -29,7 +29,7 @@ class LongHashSetTest {
             }
         }
         assertEquals(ref.size, ours.size)
-        // Каждый оставшийся элемент обязан находиться.
+        // Every remaining element must be findable.
         for (v in ref) assertTrue("потерян $v", ours.remove(v))
         assertEquals(0, ours.size)
     }

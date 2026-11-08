@@ -40,18 +40,18 @@ class FakeSrtlaRecTest {
     }
 
     /**
-     * Стенд 04.10, сценарий `wifi`: после возврата Wi-Fi первым в списке
-     * оказалась сота, которая до приёмника не достаёт. Клиент слал пробу только
-     * через первый подключившийся линк и отсекал остальные — бондинг не
-     * поднимался, хотя Wi-Fi работал. В поле это оператор, режущий UDP. Moblin
-     * пробует каждым подключившимся линком; побеждает первый ответивший.
+     * Test bench 04.10, `wifi` scenario: after Wi-Fi returned, cellular was
+     * first in the list but could not reach the receiver. The client probed
+     * only the first connected link, excluding others, so bonding failed
+     * despite working Wi-Fi. In the field this is a carrier blocking UDP.
+     * Moblin probes every connected link; the first response wins.
      */
     @Test
     fun `registration succeeds through a later link when the first one is dead`() {
         val fake = FakeSrtlaRec()
         fake.start()
-        // «Глухая» точка: тот же порт на другом адресе петли, сокет открыт, но
-        // никто не отвечает — как сота, у которой оператор режет UDP.
+        // "Deaf" endpoint: same port on another loopback address, open socket
+        // with no response, like cellular with carrier-blocked UDP.
         val deaf = java.net.DatagramSocket(fake.port, java.net.InetAddress.getByName("127.0.0.2"))
         try {
             val ready = CountDownLatch(1)
@@ -96,13 +96,12 @@ class FakeSrtlaRecTest {
 
     @Test
     fun `per-link rtt is measured from the keepalive round trip`() {
-        // Полевой прогон 31.08: rtt по каналам принимал ровно два значения —
-        // 0 и 10000 (потолок coerceIn), настоящего замера не было ни разу, хотя
-        // сквозной srtrtt считался верно. Причина, почему это никто не поймал:
-        // FakeSrtlaRec игнорировал keepalive, поэтому путь замера не проходил
-        // ни один тест. Приёмник теперь отвечает как настоящий srtla_rec —
-        // возвращает пакет как есть, — и придерживает эхо на 80 мс, чтобы у
-        // round trip была измеримая длительность.
+        // Field run 31.08: per-link rtt had only two values, 0 and 10000
+        // (coerceIn ceiling), never a real measurement, despite correct
+        // end-to-end srtrtt. Tests missed it because FakeSrtlaRec ignored
+        // keepalives, leaving the measurement path untested. The receiver
+        // now echoes packets unchanged like real srtla_rec, delaying them
+        // by 80 ms to give the round trip a measurable duration.
         val echoDelayMs = 80L
         val fake = FakeSrtlaRec(keepaliveEchoDelayMs = echoDelayMs)
         fake.start()
@@ -113,7 +112,7 @@ class FakeSrtlaRecTest {
             client.start("127.0.0.1", fake.port)
             assertTrue("client did not reach RUNNING within 5s", ready.await(5, TimeUnit.SECONDS))
 
-            // Keepalive уходит раз в секунду; ждём несколько оборотов.
+            // Keepalive is sent once a second; wait several cycles.
             val deadline = System.currentTimeMillis() + 8000
             var rtt = 0
             while (System.currentTimeMillis() < deadline) {
@@ -143,10 +142,10 @@ class FakeSrtlaRecTest {
 
     @Test
     fun `keepalive invented by the receiver does not poison per-link rtt`() {
-        // Ровно то, что случилось в поле 31.08: во время разрыва канала приёмник
-        // начал слать свои собственные keepalive, клиент вычел из их payload
-        // свою метку времени, получил мусор и упёрся в потолок coerceIn — rtt
-        // стал 10000 и залип навсегда, потому что сбрасывать его было нечем.
+        // Reproduce field behavior on 31.08: during link failure the receiver
+        // sent its own keepalives. The client subtracted its timestamp from
+        // their payload, producing garbage capped by coerceIn: rtt became
+        // 10000 permanently, with nothing to reset it.
         val fake = FakeSrtlaRec(originateKeepalives = true)
         fake.start()
         try {
@@ -156,7 +155,7 @@ class FakeSrtlaRecTest {
             client.start("127.0.0.1", fake.port)
             assertTrue("client did not reach RUNNING within 5s", ready.await(5, TimeUnit.SECONDS))
 
-            // Несколько оборотов keepalive, чтобы чужие пакеты точно дошли.
+            // Several keepalive cycles to ensure receiver-generated packets arrive.
             Thread.sleep(3500)
             val rtt = client.connectionStats().first().rtt
 
@@ -174,11 +173,11 @@ class FakeSrtlaRecTest {
 
     @Test
     fun `link that answers but never delivers leaves the rotation`() {
-        // Форма отказа из поля 31.08: разрыв был только на передачу. Сервер
-        // продолжал отвечать, latestReceivedTime оставался свежим, сторож по
-        // входящему трафику не срабатывал — и линк числился живым 24 секунды,
-        // всё это время сливая ~100-300 kbps в никуда. Здесь приёмник так же
-        // отвечает на keepalive (вход свежий), но медиа не подтверждает.
+        // Field failure 31.08: transmission only. Server replies kept
+        // latestReceivedTime fresh, so the inbound watchdog did not fire
+        // and the link stayed marked alive for 24 seconds while sending
+        // ~100-300 kbps nowhere. Here too the receiver answers keepalives
+        // (fresh inbound) but does not acknowledge media.
         val fake = FakeSrtlaRec(ackData = false)
         fake.start()
         try {
@@ -188,10 +187,10 @@ class FakeSrtlaRecTest {
             client.start("127.0.0.1", fake.port)
             assertTrue("client did not reach RUNNING within 5s", ready.await(5, TimeUnit.SECONDS))
 
-            // Гоним медиа, чтобы пакеты повисли в полёте неподтверждёнными.
-            // Проверяем именно сторож доставки, а не факт переподключения:
-            // канал переподключается и по другим причинам, и первая версия
-            // этого теста их за него принимала — проходила и без правки.
+            // Send media so packets remain unacknowledged in flight.
+            // Check the delivery watchdog itself, not merely reconnection:
+            // links reconnect for other reasons, mistaken for this watchdog
+            // by the original test, which passed even without the fix.
             val deadline = System.currentTimeMillis() + 10_000
             var sn = 1L
             while (System.currentTimeMillis() < deadline && conn.deliveryWatchdogTrips == 0) {
@@ -210,7 +209,7 @@ class FakeSrtlaRecTest {
         }
     }
 
-    /** Минимальный SRT data-пакет: старший бит нулевой + порядковый номер. */
+    /** Minimal SRT data packet: zero high bit plus sequence number. */
     private fun dataPacket(sn: Long): ByteArray {
         val p = ByteArray(64)
         p[0] = ((sn shr 24) and 0x7F).toByte()
@@ -222,12 +221,12 @@ class FakeSrtlaRecTest {
 
     @Test
     fun `periodic checks still run while inbound traffic never pauses`() {
-        // Тик раньше наступал только по таймауту сокета, то есть в паузах
-        // входящего потока. Во время отказа канала пауз как раз нет: сервер
-        // продолжает по нему слать. В поле 31.08 это дало отключение мёртвого
-        // канала через 23 секунды при пороге сторожа в 3 — проверять условие
-        // было просто некому. Здесь приёмник заливает клиента входящим каждые
-        // 10 мс и при этом ничего не подтверждает.
+        // Ticks previously occurred only on socket timeout, during inbound
+        // pauses. Failed links can still receive server traffic without pauses.
+        // Field evidence 31.08: a dead link was disabled after 23 seconds with
+        // a 3-second watchdog threshold because nothing checked the condition.
+        // Here the receiver floods the client every 10 ms without
+        // acknowledging anything.
         val fake = FakeSrtlaRec(ackData = false, floodInboundEveryMs = 10)
         fake.start()
         try {

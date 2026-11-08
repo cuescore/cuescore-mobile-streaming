@@ -4,23 +4,22 @@ import android.media.projection.MediaProjection
 import android.util.Log
 
 /**
- * Единственное место, где живёт текущий захват экрана.
+ * The single owner of the current screen capture.
  *
- * **Зачем понадобилось.** Токен захвата выдаётся интерфейсу — согласие
- * спрашивает Activity, и до 05.09 он там же и оставался, в состоянии Compose.
- * Но остановить захват из интерфейса нельзя ровно тогда, когда это нужнее
- * всего: сцену с экраном включают, чтобы свернуть приложение и показывать игру,
- * а свёрнутое приложение своей кнопки не покажет. Управление остаётся только у
- * уведомления, то есть у службы, и ей нужен доступ к токену.
+ * **Why it is needed.** The UI receives the capture token: Activity requests
+ * consent, and before 05.09 the token stayed there in Compose state. But UI
+ * controls cannot stop capture when most needed: users activate a screen
+ * scene to minimize the app and show a game, hiding the app's own button.
+ * Only the notification, hence the service, retains control and needs the token.
  *
- * Системный индикатор захвата на эту роль не годится: он живёт в строке
- * состояния, а экран эфира полноэкранный и строку прячет (проверено на S21
- * 05.09 — захват шёл, `dumpsys media_projection` его видел, а значка на экране
- * не было).
+ * The system capture indicator is unsuitable: it lives in the status bar,
+ * hidden by the fullscreen streaming screen (verified on S21 on 05.09:
+ * capture was active and visible in `dumpsys media_projection`, but there
+ * was no onscreen icon).
  *
- * **Почему просто объект, а не поле стримера.** Захват переживает пересоздание
- * стримера при смене транспорта, но не переживает смерть процесса — как и сам
- * токен, который Android сохранять не разрешает.
+ * **Why an object rather than a streamer field.** Capture survives streamer
+ * recreation when changing transport, but not process death, just like the
+ * token itself, which Android does not allow us to persist.
  */
 object ScreenCapture {
 
@@ -32,8 +31,8 @@ object ScreenCapture {
 
     val isActive: Boolean get() = projection != null
 
-    /** Запомнить выданный токен. Прежний останавливается: два живых захвата
-     *  одновременно система всё равно не даёт. */
+    /** Store the issued token. Stop the previous one: the system does not
+     *  permit two active captures simultaneously anyway. */
     @Synchronized
     fun set(next: MediaProjection?) {
         val previous = projection
@@ -42,31 +41,31 @@ object ScreenCapture {
     }
 
     /**
-     * Подождать, пока служба поднимет тип mediaProjection, и только потом
-     * трогать захват.
+     * Wait for the service to enable the mediaProjection type before
+     * touching capture.
      *
-     * **Почему нельзя иначе.** Согласие приходит в Activity, а право на захват
-     * даёт СЛУЖБА: пока она не объявила тип mediaProjection, система токен не
-     * отдаёт. Команда службе уходит через `startService`, то есть по кругу
-     * через ActivityManager, и до неё дело доходит уже после того, как наш
-     * обработчик согласия отработал целиком.
+     * **Why this ordering is necessary.** Consent arrives in Activity, but the
+     * SERVICE grants capture eligibility: until it declares mediaProjection,
+     * the system will not issue a token. `startService` commands take a round
+     * trip through ActivityManager and reach the service only after our entire
+     * consent handler has finished.
      *
-     * Ровно на это мы и наступали (замер 05.09): первое включение сцены с
-     * экраном всегда проваливалось, `getMediaProjection` возвращал пусто,
-     * сцена откатывалась на камеру — а со второго раза всё работало, потому
-     * что тип уже был поднят с прошлого захода. Со стороны выглядело как
-     * «просит права дважды».
+     * This caused the 05.09 measurement failure: the first screen-scene
+     * activation always failed, `getMediaProjection` returned nothing and
+     * the scene fell back to camera. The second worked because the previous
+     * attempt had already enabled the type. It looked like
+     * "asks for permission twice".
      *
-     * Продолжение регистрируется ДО отправки команды, иначе его можно
-     * разминуться с ответом.
+     * Register the continuation BEFORE sending the command to avoid
+     * missing the response.
      */
     @Synchronized
     fun awaitAllowed(block: () -> Unit) {
         pendingAllowed = block
     }
 
-    /** Служба подняла тип — можно работать. Вызывается из её onStartCommand,
-     *  то есть уже на главном потоке. */
+    /** The service enabled the type; capture can proceed. Called from its
+     *  onStartCommand, already on the main thread. */
     @Synchronized
     fun notifyAllowed() {
         val block = pendingAllowed ?: return
@@ -74,22 +73,22 @@ object ScreenCapture {
         block()
     }
 
-    /** Согласие не получено или отменено — продолжение выбрасывается, чтобы
-     *  оно не сработало на следующем, ни к чему не относящемся разрешении. */
+    /** Consent denied or cancelled: discard the continuation so it cannot
+     *  run for a later, unrelated permission grant. */
     @Synchronized
     fun cancelAwait() {
         pendingAllowed = null
     }
 
     /**
-     * Остановить захват.
+     * Stop capture.
      *
-     * Возврат к камере здесь НЕ делается: `stop()` приводит к вызову
-     * `MediaProjection.Callback.onStop`, а тот уже зарегистрирован интерфейсом
-     * и знает, какую сцену показывать дальше. Делать то же самое вторым путём
-     * значило бы разъехаться с ним при первой же правке.
+     * Do NOT return to camera here: `stop()` invokes
+     * `MediaProjection.Callback.onStop`, already registered by the UI and
+     * aware of which scene to show next. A second implementation of the
+     * same transition would diverge on the first edit.
      *
-     * @return false, если останавливать было нечего.
+     * @return false if there was nothing to stop.
      */
     @Synchronized
     fun stop(): Boolean {

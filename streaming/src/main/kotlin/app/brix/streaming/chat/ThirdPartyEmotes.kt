@@ -14,14 +14,14 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-/** Площадка в терминах 7TV и BTTV — это часть их адресов API. */
+/** The platform for 7TV and BTTV is part of their API URLs. */
 enum class EmotePlatform(val apiName: String) {
     TWITCH("twitch"),
     KICK("kick"),
 }
 
-/** Сеть за интерфейсом — как [KickChannelResolver]: тесты без настоящих запросов.
- *  `null` — ошибка, пустая строка — «такого канала у сервиса нет» (HTTP 404). */
+/** Network behind an interface—like [KickChannelResolver]—so tests need no real requests.
+ *  `null` means an error; an empty string means the service has no such channel (HTTP 404). */
 fun interface EmoteHttp {
     suspend fun get(url: String): String?
 }
@@ -56,14 +56,14 @@ private data class BttvChannel(
 private val json = Json { ignoreUnknownKeys = true }
 
 /**
- * Разбор ответов 7TV и BTTV — чистые функции, проверяются на сохранённых ответах.
+ * Parsers for 7TV and BTTV responses are pure functions, tested against saved responses.
  */
 internal object ThirdPartyEmoteParser {
 
     private fun seventv(emotes: List<SeventvEmote>?): Map<String, ChatPart.Emote> =
         emotes.orEmpty().mapNotNull { e ->
-            // 2x — картинка около 64 px в высоту: строка чата на экране 3x
-            // занимает 36–60 px, 1x (32 px) заметно мылится.
+            // 2x is about 64 px tall: a chat row on a 3x screen is 36–60 px,
+            // and 1x (32 px) looks noticeably blurry.
             val file = e.data.host.files.firstOrNull { it.name == "2x.webp" }
                 ?: e.data.host.files.firstOrNull { it.name.endsWith(".webp") }
                 ?: return@mapNotNull null
@@ -86,24 +86,24 @@ internal object ThirdPartyEmoteParser {
 
     fun bttvUser(body: String): Map<String, ChatPart.Emote> {
         val channel = json.decodeFromString<BttvChannel>(body)
-        // Свои эмодзи канала важнее общих — идут последними и перекрывают.
+        // Channel emotes take precedence over shared ones—they come last and override them.
         return (channel.sharedEmotes + channel.channelEmotes).associate(::bttvEmote)
     }
 }
 
 /**
- * Наборы 7TV и BTTV для одного канала: глобальные плюс канальные.
+ * 7TV and BTTV sets for one channel: global plus channel-specific.
  *
- * Включается отдельным переключателем (владелец, 16.09): это запросы к
- * сторонним сервисам, и по ним видно, какой канал открыт.
+ * Enabled by a separate toggle (owner, Sep 16): these are requests to third-party
+ * services, and they reveal which channel is open.
  *
- * Порядок слияния — как у Moblin: BTTV, затем 7TV, поздние перекрывают ранние.
- * При ошибке повторяем с растущей паузой: сервисы иногда отвечают медленно, а
- * эфир идёт часами.
+ * Merge order matches Moblin: BTTV, then 7TV, with later entries overriding earlier
+ * ones. On failure, retry with an increasing delay: services are sometimes slow, and
+ * the live stream can run for hours.
  *
- * **Отличие от Moblin, найденное проверкой 16.09:** для Kick 7TV ждёт номер
- * ПОЛЬЗОВАТЕЛЯ (`user_id`), а Moblin передаёт номер чатрума. На канале xqc
- * `/v3/users/kick/668` (чатрум) отдаёт 404, `/676` (пользователь) — 968 эмодзи.
+ * **Difference from Moblin found during testing on Sep 16:** for Kick, 7TV expects
+ * the USER's ID (`user_id`), while Moblin sends the chatroom ID. For channel xqc,
+ * `/v3/users/kick/668` (chatroom) returns 404; `/676` (user) returns 968 emotes.
  */
 class ThirdPartyEmotes(
     private val scope: CoroutineScope,
@@ -116,7 +116,7 @@ class ThirdPartyEmotes(
     private var job: Job? = null
     private var loadedKey: String? = null
 
-    /** Загрузить наборы для канала. Повторный вызов с тем же каналом ничего не делает. */
+    /** Load sets for a channel. A repeated call for the same channel does nothing. */
     fun load(platform: EmotePlatform, channelId: String) {
         val key = "${platform.apiName}/$channelId"
         if (key == loadedKey) return
@@ -157,7 +157,7 @@ class ThirdPartyEmotes(
                 failed = true
                 return
             }
-            if (body.isEmpty()) return // у сервиса нет такого канала — не ошибка
+            if (body.isEmpty()) return // The service has no such channel—not an error.
             runCatching { parse(body) }
                 .onSuccess { merged.putAll(it) }
                 .onFailure { failed = true }

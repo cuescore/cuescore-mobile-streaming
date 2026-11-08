@@ -50,8 +50,8 @@ class OverlayController(
     // dedicated instance keeps the two paths from colliding.
     private val lateAudioPlayer: DonationAudioPlayer = DonationAudioPlayer(),
 ) {
-    // Последняя страховка: любое необработанное исключение в алерте пишем в
-    // лог, а не роняем процесс вместе с эфиром.
+    // Last line of defense: log any uncaught exception in the alert
+    // instead of crashing the process along with the live stream.
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default +
             kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
@@ -59,7 +59,7 @@ class OverlayController(
             },
     )
 
-    /** Номер последнего показанного алерта: таймер старого не гасит новый. */
+    /** Number of the last displayed alert: an old timer must not dismiss a new one. */
     private val showSeq = java.util.concurrent.atomic.AtomicLong(0)
 
     /** Audio options for a single alert. */
@@ -89,9 +89,9 @@ class OverlayController(
         val posY: Float,
         val width: Float,
         val height: Float,
-        /** Множитель размера подписи, задаётся человеком. 1.0 — исходный. */
+        /** Caption size multiplier, set by the user. 1.0 is the original size. */
         val captionScale: Float = 1f,
-        /** Показывать ли подпись. */
+        /** Whether to show the caption. */
         val captionVisible: Boolean = true,
     )
 
@@ -113,9 +113,9 @@ class OverlayController(
     fun show(media: AlertMedia, audio: AudioOptions) {
         scope.launch {
             val imageFile = cache.getOrDownload(media.imageUrl, MediaType.IMAGE) ?: return@launch
-            // Битая или усечённая картинка: Glide бросает из get(), а эта
-            // корутина без обработчика — исключение роняло весь процесс
-            // посреди эфира (аудит 23.09). Картинку не показываем, эфир живёт.
+            // Corrupted or truncated image: Glide throws from get(), and this
+            // coroutine has no handler — the exception used to crash the whole process
+            // in the middle of a live stream (audit 23.09). Do not show the image; keep streaming.
             val frames = try {
                 gifDecoder.decode(imageFile, 0, 0)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -151,19 +151,19 @@ class OverlayController(
             }
             val totalDurationMs = maxOf(media.durationMs, audioMs)
 
-            // Размер подписи задаётся ОТДЕЛЬНОЙ настройкой, а не выводится из
-            // ширины картинки. Раньше было `media.width / 0.18f`, и чтобы изменить
-            // текст, приходилось менять размер окна оверлея — единственную ручку,
-            // которая на него влияла (владелец, 14.09).
+            // Caption size is controlled by a SEPARATE setting, not derived from the
+            // image width. Previously it was `media.width / 0.18f`, so changing
+            // the text meant changing the overlay window size — the only control
+            // that affected it (the owner, 14.09).
             val sizeScale = media.captionScale.coerceIn(0.5f, 3f)
 
-            // Подпись рисуется СРАЗУ В ТОМ разрешении, в каком уйдёт в кадр.
-            // Раньше она всегда была шириной 640 пикселей, а блок потом
-            // растягивался GL-фильтром до размера окна — на большом окне буквы
-            // размывались и «ломались» (владелец, 14.09). Считаем целевую
-            // ширину блока в пикселях кадра и рисуем текст под неё; масштаб
-            // всех размеров — тот же множитель, поэтому вид не меняется,
-            // меняется только чёткость.
+            // The caption is drawn DIRECTLY at the resolution in which it will appear in the frame.
+            // Previously it was always 640 pixels wide, then the block was
+            // stretched by the GL filter to fit the window — on a large window the letters
+            // blurred and “broke” (the owner, 14.09). We calculate the target
+            // block width in frame pixels and draw the text to fit; all dimensions use
+            // the same multiplier, so the appearance does not change,
+            // only the sharpness does.
             val frameSize = streamer.videoFrameSize()
             val targetPx = ((frameSize?.x ?: 1920) * size.widthFraction)
                 .toInt().coerceIn(320, 3840)
@@ -177,38 +177,38 @@ class OverlayController(
                 null
             }
 
-            // КАРТИНКА И ПОДПИСЬ — ОДИН БЛОК, склеенный в одно изображение.
+            // IMAGE AND CAPTION ARE ONE BLOCK, composited into a single image.
             //
-            // Раньше это были два независимых оверлея со своей геометрией, и они
-            // расходились: подпись считала ширину от своего масштаба, положение —
-            // от картинки, у края кадра её приходилось сужать или сдвигать, и
-            // центр переставал совпадать. Каждая правка чинила очередной симптом.
+            // Previously these were two independent overlays with their own geometry, and they
+            // drifted apart: the caption calculated width from its own scale, position
+            // from the image, and at the edge of the frame it had to be narrowed or shifted,
+            // so the centers no longer aligned. Each fix addressed another symptom.
             //
-            // Владелец 14.09 сформулировал модель: «картинка, ник, сумма и текст
-            // должны быть одним блоком, от изменения размера окна они все вместе
-            // увеличиваются или уменьшаются». Склеенный блок это и даёт даром:
-            // центр совпадает по построению, у краёв ничего не разъезжается,
-            // размер окна масштабирует всё разом.
+            // On 14.09, the owner described the model: “the image, username, amount, and text
+            // should be one block; when the window size changes, they all
+            // grow or shrink together”. Compositing the block gives us exactly that:
+            // the centers align by construction, nothing drifts at the edges,
+            // and resizing the window scales everything at once.
             val blockFrames = if (captionBitmap != null) {
                 frames.map { OverlayFrame(compose(it.bitmap, captionBitmap, renderScale), it.durationMs) }
             } else {
                 frames
             }
 
-            // Высота выводится из пропорций склеенного блока, а не берётся из
-            // настройки: иначе перетаскивание угла растянуло бы текст.
+            // Height is derived from the proportions of the composited block, not taken from the
+            // setting: otherwise dragging a corner would stretch the text.
             val blockBitmap = blockFrames.first().bitmap
             val frameAspect = if (frameSize != null && frameSize.y > 0) {
                 frameSize.x.toFloat() / frameSize.y.toFloat()
             } else {
                 16f / 9f
             }
-            // Блок ВПИСЫВАЕТСЯ в окно, заданное человеком, а не просто берёт его
-            // ширину. Раньше высота выводилась из ширины, и если окно было
-            // вытянутым по вертикали, блок занимал четверть от него — человек
-            // тянет рамку, а картинка не растёт (владелец, 14.09). Теперь
-            // масштаб — наибольший, при котором блок целиком влезает в рамку:
-            // одна из сторон совпадает с окном, вторая меньше.
+            // The block is FITTED into the window set by the user, rather than merely taking its
+            // width. Previously, height was derived from width, and if the window was
+            // tall and narrow, the block occupied only a quarter of it — the user
+            // dragged the frame but the image did not grow (the owner, 14.09). Now the
+            // scale is the largest one at which the whole block fits in the frame:
+            // one dimension matches the window and the other is smaller.
             val blockAspect = blockBitmap.height.toFloat() / blockBitmap.width * frameAspect
             val fitWidth = minOf(size.widthFraction, size.heightFraction / blockAspect)
             val blockWidth = fitWidth.coerceIn(0.02f, 1f)
@@ -243,9 +243,9 @@ class OverlayController(
                 audioJob.join()
             }
 
-            // Гасим, только если за это время не пришёл следующий алерт. Раньше
-            // таймер первого безусловно снимал уже показанный второй — при
-            // частых донатах картинка гасла раньше своего срока (аудит 23.09).
+            // Dismiss only if no subsequent alert arrived in the meantime. Previously,
+            // the first timer would unconditionally dismiss the second alert already shown — with
+            // frequent donations the image disappeared too early (audit 23.09).
             if (showSeq.get() == mySeq) streamer.hideOverlay(overlayId)
         }
     }
@@ -278,25 +278,25 @@ class OverlayController(
      *  (matches the look of typical donation-alert widgets) — so it can be
      *  shown through the same native overlay pipeline as the alert image. */
     /**
-     * Склеивает кадр картинки и подпись в одно изображение: картинка сверху,
-     * подпись под ней, обе по центру общей ширины.
+      * Composites the image frame and caption into one image: the image on top,
+      * the caption below, both centered to the same width.
      *
-     * Так блок масштабируется целиком и не может разъехаться — это и есть
-     * решение, которое искали правками геометрии двух отдельных оверлеев.
+      * This scales the whole block together and prevents parts from drifting — the
+      * solution we had been seeking by adjusting the geometry of two separate overlays.
      */
     private fun compose(image: Bitmap, caption: Bitmap, renderScale: Float): Bitmap {
-        // Картинка на 20% мельче собственного размера: в склеенном блоке она
-        // забивала подпись, потому что типовой донат-гиф шире 640 пикселей, в
-        // которые рисуется текст (владелец, 14.09 — «картинка очень крупная по
-        // отношению к тексту»). Пропорция картинки к тексту задаётся здесь, а
-        // ручка captionScale по-прежнему двигает текст в другую сторону.
+        // The image is 20% smaller than its original size: in the composited block it
+        // overshadowed the caption because a typical donation GIF is wider than the 640 pixels
+        // used to draw the text (the owner, 14.09 — “the image is very large relative
+        // to the text”). The image-to-text proportion is set here, while
+        // the captionScale control still adjusts the text independently.
         val imageWidth = (image.width * IMAGE_TO_CAPTION * renderScale).toInt().coerceAtLeast(1)
         val imageHeight = (image.height.toFloat() * imageWidth / image.width).toInt().coerceAtLeast(1)
         val imageScaled = Bitmap.createScaledBitmap(image, imageWidth, imageHeight, true)
 
         val gap = (imageHeight * 0.04f).toInt().coerceAtLeast(4)
-        // Подпись рисуется в фиксированные 640 пикселей ширины; вписываем её в
-        // ширину блока, сохраняя пропорции.
+        // The caption is drawn at a fixed width of 640 pixels; fit it within the
+        // block width while preserving its proportions.
         val width = maxOf(imageWidth, caption.width)
         val captionScaled = if (caption.width == width) {
             caption
@@ -386,16 +386,16 @@ class OverlayController(
 
     private companion object {
         // DonationAlerts' actual brand orange (donationalerts.com/brand:
-        // "Наш оранжевый" #F57D07) — used for the username+amount header
+        // "Our orange" #F57D07) — used for the username+amount header
         // since the caption is drawn by us, not scraped as a styled image,
         // and the goal is to be indistinguishable from their own widget.
         const val HEADER_COLOR = 0xFFF57D07.toInt()
 
-        // Во сколько раз картинка мельче своего исходного размера внутри блока.
+        // How many times smaller the image is than its original size inside the block.
         const val IMAGE_TO_CAPTION = 0.8f
 
-        // Разрешение, в котором подпись рисовалась раньше всегда; теперь это
-        // опорная точка, от которой считается множитель чёткости.
+        // Resolution at which the caption was always drawn before; now this is the
+        // reference point from which the sharpness multiplier is calculated.
         const val CAPTION_BASE_WIDTH = 640f
     }
 }

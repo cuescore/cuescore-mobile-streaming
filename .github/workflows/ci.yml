@@ -27,8 +27,8 @@ jobs:
           key: gradle-${{ hashFiles('gradle/libs.versions.toml', '**/*.gradle.kts') }}
           restore-keys: gradle-
 
-      # Одним вызовом, а не четырьмя: каждый отдельный `./gradlew --no-daemon`
-      # это ещё один холодный старт JVM и ещё один проход конфигурации проекта.
-      # Сборка APK оставлена как проверка компиляции, артефакт не выгружается.
+      # One invocation, not four: each separate `./gradlew --no-daemon` adds
+      # another cold JVM startup and another project configuration pass.
+      # Keep the APK build as a compilation check; do not upload the artifact.
       - name: Tests, ktlint, build
         run: ./gradlew testDebugUnitTest ktlintCheck assembleDebug --no-daemon

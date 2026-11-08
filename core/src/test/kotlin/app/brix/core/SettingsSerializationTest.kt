@@ -152,9 +152,9 @@ class SettingsSerializationTest {
         assertEquals(settings.selectedStreamProfileId, settings.selectedStreamProfile()?.id)
     }
 
-    // Пустой список стрим-профилей раньше выбрасывал весь файл настроек. Цена
-    // ошибки — вся конфигурация пользователя, поэтому проверяем именно то, что
-    // остальное переживает починку.
+    // An empty stream-profile list previously discarded the whole settings file.
+    // The cost is the user's entire configuration, so specifically verify
+    // that everything else survives the repair.
 
     @Test
     fun `пустой список профилей чинится, не унося остальные настройки`() {
@@ -180,7 +180,7 @@ class SettingsSerializationTest {
 
     @Test
     fun `задержка SRT удерживается в диапазоне, переживающем рукопожатие`() {
-        // Значение уходит в UInt16, поэтому 100000 иначе обрезалось бы в мусор.
+        // The value goes into UInt16, so 100000 would otherwise truncate to garbage.
         assertEquals(10_000, clampSrtLatency(100_000))
         assertEquals(100, clampSrtLatency(0))
         assertEquals(100, clampSrtLatency(-5))
@@ -190,9 +190,9 @@ class SettingsSerializationTest {
 
     @Test
     fun `звук переезжает из выбранного профиля в общие настройки`() {
-        // На устройствах уже лежат файлы, где звук записан в каждом профиле.
-        // Терять его при обновлении нельзя: человек настраивал битрейт и частоту
-        // руками, а после переезда они должны остаться теми же.
+        // Devices already have files with audio stored per profile. An update
+        // must not lose it: users manually set bitrate and sample rate,
+        // which must remain unchanged after migration.
         @Suppress("DEPRECATION")
         val old = AppSettings(
             selectedStreamProfileId = "p2",
@@ -210,9 +210,9 @@ class SettingsSerializationTest {
 
     @Test
     fun `повторная миграция не затирает уже настроенный общий звук`() {
-        // Миграция срабатывает один раз: после первого сохранения общие
-        // настройки перестают быть значением по умолчанию, и профиль их больше
-        // не перебивает. Иначе правка звука откатывалась бы при каждой загрузке.
+        // Migration runs once: after the first save, shared settings no longer
+        // equal defaults and the profile cannot override them. Otherwise
+        // audio edits would revert on every load.
         @Suppress("DEPRECATION")
         val already = AppSettings(
             audio = AudioSettings(bitrateKbps = 192),
@@ -225,9 +225,9 @@ class SettingsSerializationTest {
         assertEquals(192, already.migrate().audio.bitrateKbps)
     }
 
-    /** Аудит 23.09: условие «общие равны умолчанию» срабатывало снова после
-     *  сброса звука, и миграция тянула старое поле профиля. Теперь источник
-     *  после переноса обнуляется. */
+    /** Audit 23.09: resetting audio satisfied "shared settings equal defaults"
+         *  again, restoring the old profile field. Now the source is reset
+         *  after migration. */
     @Test
     fun `после миграции звук профиля обнулён и сброс общего звука её не повторяет`() {
         @Suppress("DEPRECATION")
@@ -246,11 +246,11 @@ class SettingsSerializationTest {
         assertEquals("сброс к умолчанию не должен воскрешать старое поле", AudioSettings(), reset.audio)
     }
 
-    // --- Сцены ---
+    // --- Scenes ---
     //
-    // Модель Scene лежала в коде и не читалась никем. Теперь она решает, что в
-    // кадре, поэтому важнее всего проверить обратную совместимость: у кого сцен
-    // нет, для того ничего не должно измениться.
+    // Scene existed in code without any readers. Now it determines the picture,
+    // so backward compatibility matters most: users without scenes must
+    // see no change.
 
     private fun withLayers() = AppSettings(
         widgets = listOf(
@@ -281,9 +281,9 @@ class SettingsSerializationTest {
 
     @Test
     fun `сцена без слоёв очищает кадр, а не показывает всё`() {
-        // Пустой список слоёв — это осознанный выбор «чистая картинка», а не
-        // «настройка не задана». Иначе сцену нельзя было бы использовать для
-        // того, ради чего её чаще всего заводят.
+        // An empty layer list deliberately selects a clean picture, not an
+        // unset configuration. Otherwise scenes could not serve their most
+        // common purpose.
         val s = withLayers().copy(
             scenes = listOf(Scene(id = "s1", name = "чисто")),
             selectedSceneId = "s1",
@@ -308,8 +308,8 @@ class SettingsSerializationTest {
         assertEquals(WidgetKind.WEB, migrated.widgets[1].kind)
         assertEquals(500L, migrated.widgets[1].refreshMs)
         assertEquals(listOf("o1", "w1"), migrated.scenes[0].widgetIds)
-        // Старые списки чистятся: иначе они лежат вечным дублем и удалённый
-        // виджет возвращается при следующем чтении файла.
+        // Clear legacy lists: otherwise permanent duplicates restore deleted
+        // widgets on the next file read.
         @Suppress("DEPRECATION")
         val leftovers = migrated.overlays.size + migrated.browserWidgets.size
         assertEquals(0, leftovers)

@@ -5,20 +5,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Git hash в versionName: видно, какая сборка стоит на устройстве
+// Git hash in versionName identifies the build installed on the device
 val gitHash: String =
     providers.exec {
         commandLine("git", "rev-parse", "--short", "HEAD")
         isIgnoreExitValue = true
     }.standardOutput.asText.get().trim().ifEmpty { "nogit" }
 
-// Подпись релиза. Файл с паролями лежит ВНЕ репозитория и никогда не
-// коммитится: путь задаётся переменной окружения BRIX_KEYSTORE_PROPERTIES,
-// по умолчанию ищется keystore.properties рядом с проектом.
+// Release signing. The password file lives OUTSIDE the repository and is never
+// committed. BRIX_KEYSTORE_PROPERTIES sets its path; by default, look for
+// keystore.properties beside the project.
 //
-// Без него релизная сборка подписывается отладочным ключом — это сделано
-// намеренно, чтобы сборка у постороннего человека и в CI проходила без
-// секретов. Такой APK годен для проверки, но не для распространения.
+// Without it, releases use the debug key, deliberately allowing contributors
+// and CI to build without secrets. Such APKs are suitable for testing,
+// not distribution.
 val keystoreProperties =
     Properties().apply {
         val f =
@@ -36,18 +36,18 @@ android {
         applicationId = "app.brix"
         minSdk = 29
         targetSdk = 36
-        // Версия человеческая, без хэша: её видят люди, каталог приложений и
-        // страница релиза. Хэш коммита добавляется только к отладочным
-        // сборкам (см. buildTypes ниже) — там он и нужен, чтобы по HUD было
-        // видно, что именно стоит на телефоне.
+        // Human-readable version without a hash: shown to users, app catalogs
+        // and the release page. Add the commit hash only to debug builds
+        // (see buildTypes below), where the HUD needs to identify exactly
+        // what is installed on the phone.
         //
-        // Слово beta в самой версии, а не только в описании: оно видно и в
-        // каталоге приложений, и в HUD на экране стримера. Пользователь должен
-        // понимать, что поставил, не читая страницу проекта. Список того, что
-        // не проверялось, — в README.
+        // Put beta in the version itself, not just the description, so it
+        // appears in app catalogs and the streaming HUD. Users should know
+        // what they installed without reading the project page.
+        // Untested features are listed in README.
         //
-        // versionCode обязан строго расти от релиза к релизу, иначе обновление
-        // не доедет до тех, кто уже поставил.
+        // versionCode must strictly increase with each release, otherwise
+        // existing installations will not receive the update.
         versionCode = 10
         versionName = "0.2.1-beta"
     }
@@ -65,11 +65,10 @@ android {
         compose = true
     }
 
-    // Блок «Dependency metadata» в APK не нужен и вреден. AGP кладёт в него
-    // зашифрованный список зависимостей для Google Play; проверить его
-    // содержимое нельзя, поэтому сканер F-Droid считает такой блок проблемой и
-    // отказывается принимать сборку (15.09, задача check apk). Play мы не
-    // используем вовсе.
+    // APK dependency metadata is unnecessary and harmful. AGP embeds an encrypted
+    // dependency list for Google Play. Its contents cannot be inspected, so
+    // F-Droid's scanner flags it and rejects the build (15.09, check apk task).
+    // We do not use Play at all.
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
@@ -93,20 +92,18 @@ android {
 
     buildTypes {
         debug {
-            // Хэш коммита только в отладочных сборках: он виден в HUD, и по
-            // нему сразу понятно, что именно стоит на телефоне после полевого
-            // выезда. В релизе такого хвоста быть не должно — там версия
-            // человеческая.
+            // Commit hash only in debug builds: visible in the HUD to identify
+            // the installed build after a field outing. Releases should have
+            // no such suffix; their version is human-readable.
             versionNameSuffix = "-$gitHash"
         }
         release {
-            // Ссылку на коммит внутрь APK не кладём. AGP пишет в
-            // META-INF/version-control-info.textproto хэш HEAD того дерева, из
-            // которого собирали. У нас деревьев два — приватное и публичное, —
-            // и хэши там разные по определению, поэтому воспроизводимая сборка
-            // F-Droid на этом файле разошлась в первый же прогон (15.09).
-            // Никакой пользы этот файл нам не даёт: версию и хэш отладочной
-            // сборки мы и так показываем в HUD.
+            // Do not embed a commit reference in the APK. AGP writes the source
+            // tree's HEAD hash into META-INF/version-control-info.textproto.
+            // Our private and public trees necessarily have different hashes,
+            // so F-Droid's reproducible build differed on this file on its
+            // first run (15.09). The file adds no value: the HUD already
+            // shows the version and debug build hash.
             vcsInfo { include = false }
             isMinifyEnabled = true
             isShrinkResources = true
@@ -118,13 +115,13 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
-        // Релиз, который можно прогнать на стенде (bench/). Тесты и стенд
-        // работали только с debug, а людям уходит сборка с R8 и вырезанием
-        // ресурсов — если R8 выкинет что-то нужное kotlinx-сериализации или
-        // рефлексии, это всплыло бы уже у пользователя (разбор 03.10). Здесь
-        // тот же R8 и те же правила, но debuggable (стенду нужен run-as) и
-        // отладочная подпись: ставится поверх отладочной сборки без сноса.
-        // Людям эта сборка не уходит никогда.
+        // Release suitable for the test bench (bench/). Tests previously used
+        // only debug, while users get R8 and resource shrinking. If R8 removes
+        // something needed by kotlinx serialization or reflection, users would
+        // discover it first (analysis 03.10). Use the same R8 rules here, but
+        // debuggable (the bench needs run-as) and debug-signed, allowing
+        // installation over debug without uninstalling. Never distribute
+        // this build to users.
         create("bench") {
             initWith(getByName("release"))
             isDebuggable = true

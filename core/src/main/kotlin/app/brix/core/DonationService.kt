@@ -1,11 +1,12 @@
 package app.brix.core
 
 /**
- * Сервис донат-алертов, опознанный по адресу виджета.
+ * Donation alert service identified by the widget URL.
  *
- * Хранить его в настройках незачем: адрес виджета уже есть, а сервис из него
- * выводится. Опознаём по домену второго уровня — у сервисов виджеты живут на
- * поддоменах (`widget.donatepay.ru`, `cdn.donationalerts.com`).
+ * There is no need to store it in settings: the widget URL is already available,
+ * and the service can be inferred from it. We identify it by the second-level
+ * domain—the services host their widgets on subdomains
+ * (`widget.donatepay.ru`, `cdn.donationalerts.com`).
  */
 enum class DonationService(val id: String, val label: String, val colorArgb: Int, vararg val domains: String) {
     DONATION_ALERTS("da", "DA", 0xFFF57D07.toInt(), "donationalerts.com", "donationalerts.ru"),

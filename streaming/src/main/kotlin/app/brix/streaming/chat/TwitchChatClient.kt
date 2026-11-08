@@ -87,8 +87,8 @@ class TwitchChatClient(
         openSocket()
     }
 
-    /** Эмодзи 7TV/BTTV — отдельный переключатель в настройках чата. Набор
-     *  грузится, как только известен id канала (ROOMSTATE после JOIN). */
+    /** 7TV/BTTV emotes have a separate toggle in chat settings. The set is
+     *  loaded as soon as the channel ID is known (ROOMSTATE after JOIN). */
     fun setThirdPartyEmotes(enabled: Boolean) {
         thirdPartyEnabled = enabled
         val id = roomId
@@ -111,12 +111,11 @@ class TwitchChatClient(
         val ch = channel
         if (ch.isBlank()) return
         val nick = "justinfan${Random.nextInt(10_000, 99_999)}"
-        // `mySocket` привязывает колбэки к ЭТОМУ конкретному соединению.
-        // Закрытие старого сокета в start()/stop() асинхронно — его onClosed
-        // может прилететь уже после того, как socket указывает на новое
-        // соединение (смена канала, повторный start()). Без проверки
-        // identity такой опоздавший колбэк планировал бы лишний реконнект
-        // поверх уже рабочей сессии.
+        // `mySocket` binds callbacks to THIS specific connection. Closing an
+        // old socket in start()/stop() is asynchronous — its onClosed may arrive
+        // after socket already points to a new connection (channel change or
+        // another start()). Without the identity check, that late callback could
+        // schedule an unnecessary reconnect on top of a working session.
         lateinit var mySocket: ChatSocket
         val listener = object : ChatSocketListener {
             override fun onOpen() {
@@ -184,8 +183,8 @@ class TwitchChatClient(
             timestampMs = System.currentTimeMillis(),
             parts = parts,
         )
-        // Держим хвост фиксированной длины: эфир идёт часами, сообщений
-        // тысячи — без этого предела список растёт всю трансляцию (6.9.1).
+        // Keep a fixed-size tail: the stream runs for hours and has thousands
+        // of messages — without this limit, the list grows for the whole broadcast (6.9.1).
         _messages.update { (it + message).takeLast(maxMessages) }
     }
 }

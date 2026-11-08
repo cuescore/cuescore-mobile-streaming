@@ -23,29 +23,29 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Камера и локальное превью: поверхность видоискателя, смена камеры и линзы,
- * зум, фонарь, тап по фокусу, применение пользовательских умолчаний.
+ * Camera and local preview: viewfinder surface, camera and lens switching,
+ * zoom, torch, tap-to-focus, and applying user defaults.
  *
- * Выделено из [SrtlaStreamer]. Кроме уборки это закрывает старую ловушку:
- * превью поднимается из ТРЁХ мест (внешний [startPreview], восстановление
- * после пересборки энкодера и перезапуск на старте эфира), и на каждом надо
- * было не забыть позвать [applyPostPreviewCameraSetup]. Раньше это держалось на
- * комментарии — один путь уже терял настройки съёмки. Теперь два внутренних
- * пути сведены в [resumePreviewIfDetached], и забыть негде.
+ * Extracted from [SrtlaStreamer]. Besides cleanup, this closes an old trap:
+ * preview starts in THREE places (external [startPreview], encoder recreation,
+ * and restart when streaming begins), and each had to remember to call
+ * [applyPostPreviewCameraSetup]. That used to be left to a comment — one path
+ * already lost camera settings. Now both internal paths go through
+ * [resumePreviewIfDetached], so there's nowhere to forget.
  *
- * Работает со `StreamBase`, а не с конкретным транспортом: [SrtlaStream],
- * `RtmpStream` и `WhipStream` наследуют его все три, и всё, что нужно камере
- * (GL-интерфейс, превью, источник видео), объявлено именно там. Ради этого тип
- * и расширен — до 03.09 контроллер знал только про SRTLA, поэтому каждая правка
- * камеры чинила один путь из трёх, а RTMP и WHIP годами оставались с
- * замерзающим тапом по фокусу и без умолчаний камеры вовсе.
+ * Works with `StreamBase`, not a specific transport: [SrtlaStream], `RtmpStream`,
+ * and `WhipStream` all inherit it, and everything the camera needs (GL
+ * interface, preview, video source) is declared there. The type was expanded
+ * for this — until 03.09 the controller knew only about SRTLA, so each camera
+ * fix addressed one of three paths, while RTMP and WHIP went years with a
+ * freezing tap-to-focus and no camera defaults at all.
  */
 internal class CameraController(
     private val appContext: Context,
     private val stream: StreamBase,
     private val scope: CoroutineScope,
-    /** Частота кадров текущего профиля — уходит в подсказку системе о реальном
-     *  темпе превью, см. [applyPreviewFrameRateHint]. */
+    /** Current profile frame rate — passed to the system as a hint about the
+     *  actual preview rate; see [applyPreviewFrameRateHint]. */
     private val profileFps: () -> Int,
     private val isReleased: () -> Boolean,
     private val updateState: ((StreamState) -> StreamState) -> Unit,
@@ -54,24 +54,23 @@ internal class CameraController(
 
     private var defaults = CameraDefaults()
 
-    // Умолчание по камере ставим только при самом первом открытии: повторное
-    // применение на каждом startPreview() (например когда превью возвращается
-    // после переподключения) дралось бы с ручной сменой камеры, сделанной
-    // пользователем посреди сессии.
+    // Apply the default camera only on the first open: applying it on every
+    // startPreview() (for example when preview returns after reconnecting) would
+    // conflict with a manual camera change made by the user mid-session.
     @Volatile
     private var defaultCameraApplied = false
 
-    // Операции с HAL камеры (смена камеры, зум, тап по фокусу) обязаны идти не
-    // с UI-потока (блокирующий поход в HAL даёт рывки и ANR), но при этом
-    // строго по одной: раскидывание их по пулу Dispatchers.IO позволяло двум
-    // вызовам столкнуться на сессии захвата и подвесить камеру («No request /
-    // wait timeout»).
+    // Camera HAL operations (switching cameras, zooming, tap-to-focus) must not
+    // run on the UI thread (a blocking HAL call causes jank and ANRs), but must
+    // also run strictly one at a time: dispatching them to the Dispatchers.IO
+    // pool let two calls collide on the capture session and hang the camera
+    // ("No request / wait timeout").
     private val cameraDispatcher = Dispatchers.IO.limitedParallelism(1)
 
-    // Сериализация выше убирает одновременные вызовы, но очередь из них
-    // (быстрый щипок зума, несколько тапов по линзам) всё равно отработала бы
-    // каждый до конца, а это реальные закрытия-открытия и походы в HAL. Отмена
-    // предыдущей ещё не начатой задачи оставляет из пачки только последнюю.
+    // Serialization above prevents concurrent calls, but a queue of them (a
+    // quick zoom pinch, several lens taps) would still run each to completion,
+    // causing real close/reopen cycles and HAL calls. Canceling the previous
+    // task if it hasn't started yet leaves only the last one in a burst.
     private var cameraJob: Job? = null
 
     private var lastPreviewSurface: Surface? = null
@@ -79,36 +78,36 @@ internal class CameraController(
     private var lastPreviewHeight = 0
 
     fun configure(newDefaults: CameraDefaults) {
-        // Экземпляр стримера переживает Stop->Start (см. StreamController.getOrCreate),
-        // поэтому одноразовая защёлка defaultCameraApplied иначе молча проглотила
-        // бы настоящую смену настройки между сессиями — тот самый класс багов
-        // «настройка не применяется без перезапуска приложения», только в другом
-        // поле. Сбрасываем её лишь когда УМОЛЧАНИЕ действительно изменилось, а не
-        // на каждый вызов, иначе ручная смена камеры посреди сессии будет
-        // отменяться.
+        // The streamer instance survives Stop->Start (see StreamController.getOrCreate),
+        // so the one-shot defaultCameraApplied latch would silently swallow an
+        // actual settings change between sessions — the same kind of "setting
+        // doesn't apply until app restart" bug, just in another field. Reset it
+        // only when the DEFAULT actually changes, not on every call, or a manual
+        // camera change mid-session would be undone.
         if (newDefaults.defaultCamera != defaults.defaultCamera) {
             defaultCameraApplied = false
         }
         defaults = newDefaults
-        // Если камера и превью уже живут (обычный случай: настройки меняют
-        // посреди сессии, а не перед самым первым подключением превью) —
-        // применяем сразу. Старый код применял это только из одноразового блока
-        // в startPreview(), поэтому изменение, сделанное во время превью, молча
-        // не действовало до полного перезапуска приложения; ровно ради этого
-        // метод и существует.
+        // If the camera and preview are already running (the usual case: settings
+        // are changed mid-session, not before preview first starts), apply them
+        // immediately. The old code applied this only from a one-shot block in
+        // startPreview(), so a change made during preview did nothing until the
+        // app was fully restarted; this method exists precisely to fix that.
         camera2()?.let { src ->
             applyDefaults(src)
             applyDefaultLensOnce(src)
         }
     }
 
-    /** Стабилизация и зеркало превью — дешёвые правки запроса захвата, того же
-     *  веса, что и вызов enableAutoFocus рядом, можно прямо на потоке вызова. */
+    /** Preview stabilization and mirroring are cheap capture-request changes,
+     *  about as lightweight as the nearby enableAutoFocus call, so they can run
+     *  directly on the calling thread. */
     private fun applyDefaults(src: Camera2Source) {
         if (defaults.stabilization) src.enableVideoStabilization() else src.disableVideoStabilization()
-        // Оптическая — отдельный механизм, и до 04.09 мы её не трогали вовсе:
-        // библиотека даёт её раздельно, а мы дёргали только электронную.
-        // Не все камеры её имеют, поэтому отказ игнорируем молча.
+        // Optical stabilization is a separate mechanism, and until 04.09 we
+        // didn't touch it at all: the library exposes it separately, while we
+        // only toggled electronic stabilization. Not all cameras support it, so
+        // silently ignore failures.
         runCatching {
             if (defaults.opticalStabilization) {
                 src.enableOpticalVideoStabilization()
@@ -119,10 +118,10 @@ internal class CameraController(
         applyMirror(src)
     }
 
-    /** Перейти на заданную умолчанием камеру, один раз. Это полное закрытие и
-     *  открытие HAL — только на [cameraDispatcher], никогда не на месте (вся
-     *  сага с тапом по фокусу в этом файле выросла ровно из того, что поход в
-     *  HAL с неправильного потока замораживает превью). */
+    /** Switch to the camera specified by the default, once. This fully closes
+     *  and reopens the HAL — only on [cameraDispatcher], never inline (the whole
+     *  tap-to-focus saga in this file began because calling the HAL from the
+     *  wrong thread freezes the preview). */
     private fun applyDefaultLensOnce(src: Camera2Source) {
         if (defaultCameraApplied) return
         defaultCameraApplied = true
@@ -140,33 +139,33 @@ internal class CameraController(
         }
     }
 
-    /** Зеркалит только превью на устройстве (не исходящий эфир), когда активна
-     *  фронтальная камера и включено соответствующее умолчание — так ведёт себя
-     *  большинство камерных приложений с «селфи»-превью. */
+    /** Mirrors only the on-device preview (not the outgoing stream) when the
+     *  front camera is active and the corresponding default is enabled — as in
+     *  most camera apps with a "selfie" preview. */
     private fun applyMirror(src: Camera2Source) {
         val isFront = src.getCameraFacing() == CameraHelper.Facing.FRONT
         runCatching {
             val gl = stream.getGlInterface()
             gl.setIsPreviewHorizontalFlip(defaults.mirrorFront && isFront)
-            // Эфир отдельно от превью: стримеру привычно видеть себя зеркально,
-            // зрителю — как в жизни. При зеркале в эфире весь текст в кадре
-            // читается наоборот, поэтому по умолчанию выключено.
+            // The stream is independent of the preview: streamers are used to
+            // seeing themselves mirrored, while viewers see them as they are.
+            // Mirroring the stream reverses all text in the frame, so it's off by default.
             gl.setIsStreamHorizontalFlip(defaults.mirrorFrontInStream && isFront)
         }
     }
 
-    /** Размеры, с которыми превью реально стартовало: по ним видно, что окно
-     *  с тех пор повернулось и viewport больше не соответствует поверхности. */
+    /** The dimensions preview actually started with: they reveal whether the
+     *  window has since rotated and the viewport no longer matches the surface. */
     private var lastStartedWidth = 0
     private var lastStartedHeight = 0
 
     fun startPreview(surfaceView: SurfaceView) {
         try {
-            // Размер буфера, а не вьюхи. UI зовёт holder.setFixedSize(), то есть
-            // поверхность меньше вьюхи, а SurfaceFlinger растягивает. Эти числа
-            // уходят в glViewport (ScreenRender.drawPreview), поэтому брать
-            // размер вьюхи означало задавать окно вывода больше самой
-            // поверхности: до 01.09 сюда шло 2400×1080 при буфере 1920×1080.
+            // Buffer size, not view size. The UI calls holder.setFixedSize(), so
+            // the surface is smaller than the view and SurfaceFlinger scales it.
+            // These values go to glViewport (ScreenRender.drawPreview), so using
+            // the view size set a larger output window than the surface itself:
+            // before 01.09 this got 2400×1080 for a 1920×1080 buffer.
             val frame = surfaceView.holder.surfaceFrame
             val pw = if (frame.width() > 0) frame.width() else surfaceView.width
             val ph = if (frame.height() > 0) frame.height() else surfaceView.height
@@ -175,12 +174,11 @@ internal class CameraController(
                 lastPreviewWidth = pw
                 lastPreviewHeight = ph
             }
-            // Превью, запущенное с ДРУГИМ размером поверхности, надо
-            // перезапустить. Размер уходит в glViewport один раз, при старте:
-            // если окно с тех пор повернулось (портретная заставка на запуске —
-            // 15.09), картинка остаётся узкой вертикальной полосой посреди
-            // альбомного экрана. Стримить в этот момент нельзя — на живом эфире
-            // не трогаем ничего.
+            // Preview started with a DIFFERENT surface size must be restarted.
+            // The size is passed to glViewport once, at startup: if the window
+            // rotates afterward (portrait splash at launch — 15.09), the picture
+            // remains a narrow vertical strip in the middle of the landscape
+            // screen. Don't do this while streaming — touch nothing in a live stream.
             val sizeChanged = pw != lastStartedWidth || ph != lastStartedHeight
             if (stream.isOnPreview && sizeChanged && !stream.isStreaming &&
                 surfaceView.holder.surface.isValid
@@ -195,26 +193,26 @@ internal class CameraController(
                 applyPostPreviewCameraSetup()
             }
         } catch (e: Exception) {
-            // Раньше здесь было молчаливое проглатывание: сбой камеры или
-            // энкодера оставлял чёрный экран вообще без диагностики.
-            // Пишем хотя бы в лог; типизированная StreamError — отдельная работа.
+            // Previously this failure was silently swallowed: a camera or
+            // encoder failure left a black screen with no diagnostics at all.
+            // At least log it; a typed StreamError is separate work.
             Log.e(tag, "startPreview failed", e)
         }
     }
 
     /**
-     * Сменить остановленный захват экрана на камеру, пока превью не начали.
+     * Replace a stopped screen-capture source with the camera before preview starts.
      *
-     * `startPreview` в библиотеке поднимает источник, если тот не работает
-     * (проверено по байт-коду `StreamBase` 2.8.0), а `stopPreview` глушит его,
-     * только когда нет ни эфира, ни записи. Значит после «свернул — развернул»
-     * без эфира источник экрана оказывается остановленным, и превью попробует
-     * поднять его снова. Для захвата экрана это запрещено: токен одноразовый,
-     * второй `createVirtualDisplay` даёт SecurityException — и система заодно
-     * гасит захват (поймано на устройстве 05.09).
+     * The library's `startPreview` starts the source if it's not running
+     * (verified in `StreamBase` 2.8.0 bytecode), while `stopPreview` stops it
+     * only when neither streaming nor recording. So after minimizing and
+     * restoring without a live stream, the screen source is stopped, and preview
+     * will try to start it again. That's forbidden for screen capture: the token
+     * is single-use, and a second `createVirtualDisplay` throws SecurityException
+     * — and the system stops capture too (reproduced on-device 05.09).
      *
-     * Поэтому мёртвый источник экрана меняется на камеру заранее. Согласие на
-     * новый захват спрашивает интерфейс, когда сцену выбирают снова.
+     * So replace the dead screen source with the camera in advance. The UI asks
+     * for consent to a new capture when the scene is selected again.
      */
     private fun dropDeadScreenSource() {
         val source = stream.videoSource
@@ -234,12 +232,12 @@ internal class CameraController(
     }
 
     /**
-     * Вернуть превью, если поверхность есть, а показ отвалился.
+     * Restore preview if the surface exists but display has stopped.
      *
-     * Два внутренних пути ведут сюда: пересборка энкодера в `prepare()` (превью
-     * гасили ради неё) и старт эфира — RootEncoder на `stopStream()` гасит и
-     * захват с камеры, поэтому после Stop→Start картинка замерзает на последнем
-     * кадре, и пользователь решает, что камера умерла.
+     * Two internal paths lead here: encoder recreation in `prepare()` (preview
+     * was stopped for it) and stream startup — RootEncoder also stops camera
+     * capture in `stopStream()`, so after Stop→Start the picture freezes on the
+     * last frame and the user thinks the camera has died.
      */
     fun resumePreviewIfDetached() {
         val surface = lastPreviewSurface ?: return
@@ -250,10 +248,10 @@ internal class CameraController(
         }.onFailure { Log.e(tag, "preview restore failed: ${it.message}") }
     }
 
-    /** Непрерывный автофокус (CONTROL_AF_MODE_CONTINUOUS_VIDEO с цепочкой
-     *  запасных вариантов) плюс стабилизация, зеркало и камера по умолчанию —
-     *  сразу после ЛЮБОГО пути, который реально поднял превью в RootEncoder, а
-     *  не только после внешнего [startPreview]. */
+    /** Continuous autofocus (CONTROL_AF_MODE_CONTINUOUS_VIDEO with fallbacks),
+     *  plus stabilization, mirroring, and the default camera — immediately
+     *  after ANY path that actually starts preview in RootEncoder, not only
+     *  external [startPreview]. */
     private fun applyPostPreviewCameraSetup() {
         camera2()?.enableAutoFocus()
         camera2()?.let { src ->
@@ -263,22 +261,23 @@ internal class CameraController(
         applyPreviewFrameRateHint()
     }
 
-    /** Сказать системе истинную частоту превью.
+    /** Tell the system the actual preview frame rate.
      *
-     *  Поле 01.09, `SurfaceFlinger --timestats` по слою превью, 752 кадра за
-     *  25 с: `averageFPS=30.4`, `droppedFrames=0`, `jankyFrames=0`, но
-     *  present2present лёг как 16ms=136 / 33ms=482 / 50ms=118 / 66ms=5. То
-     *  есть кадры не теряются, а выводятся неравномерно: треть держится один
-     *  такт вместо двух или три вместо двух. Мгновенная частота в этих местах
-     *  20 и 15 к/с, и на профиле 30 fps это видно глазом. На 60 fps незаметно,
-     *  потому что кадр есть на каждый такт экрана.
+     *  Field measurement on 01.09, `SurfaceFlinger --timestats` for the preview
+     *  layer, 752 frames in 25 s: `averageFPS=30.4`, `droppedFrames=0`,
+     *  `jankyFrames=0`, but present2present was 16ms=136 / 33ms=482 / 50ms=118 /
+     *  66ms=5. In other words, frames aren't dropped, but displayed unevenly: a
+     *  third lasts one refresh instead of two, or three instead of two. The
+     *  instantaneous rate at those points is 20 and 15 fps, visible at a 30 fps
+     *  profile. At 60 fps it's unnoticeable because there is a frame on every
+     *  screen refresh.
      *
-     *  Причина: GL-поток RootEncoder меняет буфер по приходу кадра с камеры,
-     *  а та свободно бежит на 30.0 Гц относительно 60 Гц экрана, часы
-     *  расходятся. При этом слой голосует за 60 (`SetFrameRate vote:
-     *  frameRate = 60.00` в том же дампе), то есть SurfaceFlinger планирует
-     *  вывод под неверную частоту. Подсказка с FIXED_SOURCE даёт ему право
-     *  держать стабильную раскладку под реальные 30. */
+     *  Cause: RootEncoder's GL thread swaps the buffer whenever a camera frame
+     *  arrives, while the camera runs freely at 30.0 Hz against the screen's
+     *  60 Hz, so their clocks drift. Yet the layer votes for 60 (`SetFrameRate
+     *  vote: frameRate = 60.00` in the same dump), so SurfaceFlinger schedules
+     *  output at the wrong rate. A FIXED_SOURCE hint lets it keep a stable
+     *  cadence for the actual 30 fps source. */
     private fun applyPreviewFrameRateHint() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         val surface = lastPreviewSurface ?: return
@@ -298,25 +297,26 @@ internal class CameraController(
     }
 
     /**
-     * Показать заставку вместо камеры: неподвижную картинку в кадр.
+     * Show a still image in the frame instead of the camera.
      *
-     * Ради чего: «сейчас вернусь», не обрывая эфир. Обрыв стоит дорого —
-     * приёмник считает каждый оборванный сеанс неудачной авторизацией и банит
-     * адрес примерно на минуту (см. StartRestartGuard), так что уйти в заставку
-     * гораздо дешевле, чем остановить и поднять заново.
+     * Use case: "I'll be right back" without interrupting the live stream.
+     * Interruptions are costly — the receiver treats each interrupted session
+     * as a failed authorization and bans the address for about a minute (see
+     * StartRestartGuard), so switching to a still image is much cheaper than
+     * stopping and starting again.
      *
-     * Камера при этом отпускается: держать её открытой ради картинки — это
-     * 0.29 ядра и заметная доля ватт по замерам 02.09.
+     * The camera is released in the meantime: keeping it open just for an image
+     * costs 0.29 CPU cores and a noticeable fraction of a watt in 02.09 measurements.
      *
-     * @return false, если картинку не удалось прочитать; вызывающий обязан
-     *  остаться на камере, а не показать зрителям чёрный кадр.
+     * @return false if the image could not be read; the caller must stay on the
+     *  camera rather than show viewers a black frame.
      */
     fun showStillImage(uri: android.net.Uri): Boolean = runCatching {
         val bitmap = decodeScaled(uri) ?: return false
         stream.changeVideoSource(com.pedro.encoder.input.sources.video.BitmapSource(bitmap))
-        // Прежнюю освобождаем только ПОСЛЕ того, как источник принял новую:
-        // на неудаче в кадре остаётся старая картинка, и переработанный битмап
-        // дал бы чёрный экран вместо заставки.
+        // Release the previous bitmap only AFTER the source accepts the new one:
+        // on failure, the old image remains in the frame, and a recycled bitmap
+        // would show a black screen instead of the still image.
         swapStillBitmap(bitmap)
         true
     }.getOrElse {
@@ -325,10 +325,10 @@ internal class CameraController(
     }
 
     /**
-     * Заставка сейчас в кадре. Держим ссылку, чтобы освободить память:
-     * `BitmapSource` её не освобождает, а картинка из галереи — это снимок
-     * основной камеры, то есть десятки мегабайт на каждое переключение сцены.
-     * Без этого несколько переключений туда-обратно кончались нехваткой памяти.
+     * The still image is currently in the frame. Keep a reference so it can be
+     * freed: `BitmapSource` doesn't release it, and a gallery image is a photo
+     * from the main camera, meaning tens of megabytes for every scene switch.
+     * Without this, a few back-and-forth switches would exhaust memory.
      */
     private var stillBitmap: android.graphics.Bitmap? = null
 
@@ -339,13 +339,13 @@ internal class CameraController(
     }
 
     /**
-     * Прочитать картинку сразу уменьшенной до размера кадра.
+     * Read the image already scaled down to the frame size.
      *
-     * Снимок на 12 Мп — это 48 МБ в памяти при четырёх байтах на точку, а в
-     * эфир уходит в лучшем случае 1080p, то есть в шесть раз меньше. Читать
-     * полный размер, чтобы тут же его ужать, значит платить памятью ни за что.
-     * [MAX_SIDE] взят с запасом над 1080p: `inSampleSize` уменьшает только
-     * степенями двойки, точную подгонку всё равно делает библиотека.
+     * A 12 MP photo takes 48 MB in memory at four bytes per pixel, while at most
+     * 1080p goes to the stream — six times smaller. Reading the full size only
+     * to shrink it immediately wastes memory. [MAX_SIDE] leaves headroom over
+     * 1080p: `inSampleSize` only scales by powers of two, and the library does
+     * the exact fit afterward.
      */
     private fun decodeScaled(uri: android.net.Uri): android.graphics.Bitmap? {
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -371,14 +371,14 @@ internal class CameraController(
     }
 
     /**
-     * Показать экран телефона вместо камеры.
+     * Show the phone screen instead of the camera.
      *
-     * [projection] выдаётся системой только после согласия пользователя, и
-     * сохранить его между запусками нельзя — Android этого не разрешает. Поэтому
-     * при каждом запуске приложения согласие спрашивается заново.
+     * [projection] is provided by the system only after user consent, and cannot
+     * be saved between launches — Android doesn't allow it. So consent is
+     * requested again every time the app starts.
      *
-     * @return false, если источник не создался; вызывающий обязан вернуть
-     *  камеру, а не оставить зрителей без картинки.
+     * @return false if the source could not be created; the caller must restore
+     *  the camera rather than leave viewers without a picture.
      */
     fun showScreen(projection: android.media.projection.MediaProjection): Boolean = runCatching {
         stream.changeVideoSource(
@@ -391,7 +391,7 @@ internal class CameraController(
         false
     }
 
-    /** Вернуть камеру после заставки или захвата экрана. */
+    /** Restore the camera after a still image or screen capture. */
     fun showCamera() {
         if (camera2() != null) return
         runCatching { stream.changeVideoSource(Camera2Source(appContext)) }
@@ -403,11 +403,11 @@ internal class CameraController(
     }
 
     /**
-     * Перейти на заданную сторону, а не «переключить».
+     * Move to a specific side, rather than "switch".
      *
-     * Сцене нужно именно это: она говорит «фронтальная», а не «другая». Через
-     * switchCamera() пришлось бы сначала выяснять текущую сторону у вызывающего,
-     * и при быстром переключении сцен две команды подряд отменяли бы друг друга.
+     * That's what a scene needs: it says "front", not "the other one". Using
+     * switchCamera() would require the caller to first check the current side,
+     * and two quick scene switches would cancel each other out.
      */
     fun setCameraSide(side: CameraSide) {
         val src = camera2() ?: return
@@ -432,9 +432,9 @@ internal class CameraController(
         }
     }
 
-    /** Операции с камерой и GL блокируют на сотни миллисекунд и не должны идти
-     *  с главного потока; плюс защита от вызова после release — колбэк из UI,
-     *  пришедший позже, уронил бы RootEncoder. */
+    /** Camera and GL operations block for hundreds of milliseconds and must not
+     *  run on the main thread; also guard against calls after release — a late
+     *  callback from the UI would crash RootEncoder. */
     fun setTorch(enabled: Boolean) {
         if (isReleased()) return
         scope.launch {
@@ -444,12 +444,12 @@ internal class CameraController(
         }
     }
 
-    /** Фонарь через камеру, а если она его не даёт — напрямую через
-     *  [CameraManager]. Запасной путь нужен не для красоты: на части устройств
-     *  `Camera2Source` отдаёт отказ, пока сессия захвата перестраивается, и без
-     *  него кнопка фонаря просто молчала бы.
+    /** Use the camera torch, or control it directly through [CameraManager] if
+     *  the camera doesn't provide one. The fallback matters: on some devices,
+     *  `Camera2Source` rejects the request while the capture session is being
+     *  rebuilt, and without it the torch button would simply do nothing.
      *
-     *  @return false, когда фонаря нет или камера отклонила запрос. */
+     *  @return false if there is no torch or the camera rejected the request. */
     private fun setTorchEnabled(enabled: Boolean): Boolean {
         camera2()?.let { source ->
             try {
@@ -471,24 +471,24 @@ internal class CameraController(
         }
     }
 
-    /** Зажечь фонарь на старте эфира, если так настроено. Решение о том, что
-     *  такое «настроено», принадлежит камере, поэтому спрашивают об этом здесь,
-     *  а не в стримере. */
+    /** Turn on the torch when streaming starts, if configured. The camera owns
+     *  the meaning of "configured", so that decision is made here, not in the
+     *  streamer. */
     fun applyTorchOnStart() {
         if (defaults.torchOnStart) setTorch(true)
     }
 
     /**
-     * Выбирает конкретную заднюю линзу (широкую, сверхширокую, теле), сначала
-     * при необходимости уходя с фронтальной камеры — выбор задней линзы в
-     * пилюле И ЕСТЬ запрос быть на этой линзе, ровно как в Moblin.
+     * Select a specific rear lens (wide, ultra-wide, tele), switching away
+     * from the front camera first if needed — choosing a rear lens in the pill
+     * IS the request to use that lens, just as in Moblin.
      *
-     * Проверка стороны камеры раньше шла синхронно у вызывающего и выходила с
-     * `false`, поэтому путь «перевернуть, потом выбрать линзу» из UI линзу так
-     * и не применял: switchCamera() асинхронна, в тот момент камера была ещё
-     * фронтальной, и setLens возвращался раньше, чем она успевала повернуться.
-     * Теперь проверка живёт внутри задачи камеры, после переворота, на том же
-     * сериализованном диспетчере, где идут все походы в HAL.
+     * The camera-side check used to run synchronously in the caller and return
+     * `false`, so the UI's "flip, then select lens" path never applied the lens:
+     * switchCamera() is asynchronous, so the camera was still front-facing and
+     * setLens returned before it could switch. Now the check runs inside the
+     * camera task, after switching, on the same serialized dispatcher as all
+     * other HAL calls.
      */
     fun setLens(cameraId: String, zoom: Float): Boolean {
         if (isReleased()) return false
@@ -540,20 +540,20 @@ internal class CameraController(
         camera2()?.getZoomRange()?.let { it.lower..it.upper }
 
     /**
-     * Метод библиотеки `Camera2ApiManager.tapToFocus()` (который тут звался
-     * раньше) делает тап по фокусу через `session.stopRepeating()` и два
-     * одиночных `session.capture()`, а повторяющееся превью восстанавливает
-     * ТОЛЬКО из асинхронного колбэка onCaptureCompleted, привязанного к запросу
-     * с меткой «focus». На этом устройстве тот колбэк (и, судя по всему, сами
-     * capture — подтверждено живьём через `dumpsys media.camera`:
-     * android.sensor.timestamp немедленно перестаёт расти, сессия камеры
-     * остаётся «open») стабильно не наступает, поэтому повторяющийся запрос
-     * никогда не взводится заново и превью намертво замерзает на каждом тапе,
-     * причём без единого исключения. Переписано по образцу, который советует
-     * сама документация Android: обновлять область и триггер автофокуса НА УЖЕ
-     * ИДУЩЕМ повторяющемся запросе через setRepeatingRequest — без
-     * stopRepeating и без одиночного capture, — так что превью не встаёт даже
-     * на мгновение, независимо от того, отчитается ли HAL о срабатывании.
+     * The library's `Camera2ApiManager.tapToFocus()` method (used here before)
+     * performs tap-to-focus with `session.stopRepeating()` and two one-shot
+     * `session.capture()` calls, then restores repeating preview ONLY from the
+     * asynchronous onCaptureCompleted callback tied to the request tagged
+     * "focus". On this device that callback (and apparently the captures
+     * themselves — confirmed live via `dumpsys media.camera`: the
+     * android.sensor.timestamp stops advancing immediately, while the camera
+     * session remains "open") consistently never arrives, so the repeating
+     * request is never armed again and preview freezes solid on every tap,
+     * without throwing an exception. Rewritten following Android's own docs:
+     * update the region and autofocus trigger on the ALREADY RUNNING repeating
+     * request via setRepeatingRequest — without stopRepeating or a one-shot
+     * capture — so preview never stalls, even momentarily, regardless of
+     * whether the HAL reports completion.
      */
     fun tapFocus(view: View, x: Float, y: Float) {
         val clampedX = x.coerceIn(0f, view.width.toFloat())
@@ -580,27 +580,26 @@ internal class CameraController(
                     builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_AUTO)
                     builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
                 }
-                // Дать HAL пару кадров с активным триггером, прежде чем его
-                // отпустить — та же выдержка, что в примерах camera2 от Android
-                // для ровно этого сценария.
+                // Give the HAL a couple of frames with the trigger active before
+                // releasing it — the same delay used in Android's camera2 examples
+                // for this exact scenario.
                 delay(120L)
                 src.setCustomRequest { builder ->
                     builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_IDLE)
                 }
-                // AF_MODE_AUTO держит фокус на выбранной области, а не следит за
-                // сценой дальше — как «тап по фокусу» в настоящем камерном
-                // приложении (ненадолго заперли), после чего возвращаем
-                // непрерывный автофокус, чтобы камера дальше наводилась сама,
-                // без ещё одного тапа.
+                // AF_MODE_AUTO holds focus on the selected area instead of
+                // continuing to track the scene — like "tap to focus" in a real
+                // camera app (lock briefly), then restore continuous autofocus
+                // so the camera can keep focusing on its own without another tap.
                 delay(3000L)
                 src.enableAutoFocus()
                 Log.d(tag, "tapFocus: trigger released, AF continues in AUTO mode on region")
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // Штатно: следующий тап, зум или смена линзы отменяют эту задачу
-                // (см. cameraJob — из пачки нажатий доживает только последнее).
-                // Раньше это писалось в лог как «tapFocus failed» с трассой, и в
-                // полевом разборе выглядело поломкой; по правилам структурной
-                // конкурентности отмену надо пробросить, а не глотать как сбой.
+                // Expected: the next tap, zoom, or lens switch cancels this task
+                // (see cameraJob — only the last action in a burst survives).
+                // Previously this was logged as "tapFocus failed" with a stack
+                // trace, making it look broken in field analysis; structured
+                // concurrency requires propagating cancellation, not swallowing it as a failure.
                 throw e
             } catch (e: Exception) {
                 Log.e(tag, "tapFocus failed", e)
@@ -611,9 +610,9 @@ internal class CameraController(
     private fun camera2(): Camera2Source? = stream.videoSource as? Camera2Source
 
     private companion object {
-        /** Длинная сторона заставки. Запас над 1080p: точную подгонку под кадр
-         *  делает сама библиотека, наше дело — не держать в памяти снимок
-         *  целиком. */
+        /** Long side of the still image. Leave headroom over 1080p: the library
+         *  performs the exact fit to the frame; our job is not to keep the full
+         *  photo in memory. */
         const val MAX_SIDE = 1920
     }
 }

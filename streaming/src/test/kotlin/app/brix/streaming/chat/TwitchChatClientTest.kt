@@ -202,8 +202,8 @@ class TwitchChatClientTest {
         sockets[1].listener.onOpen()
         assertTrue(client.connected.value)
 
-        // Реальный сокет закрывается асинхронно — колбэк старого соединения
-        // может прийти уже после того, как новое успело открыться.
+        // Real sockets close asynchronously: an old connection's callback
+        // may arrive after the new connection has already opened.
         sockets[0].listener.onClosed()
         advanceUntilIdle()
 

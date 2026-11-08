@@ -11,14 +11,13 @@ import org.junit.Test
 import java.io.File
 
 /**
- * `SettingsStore` держит ВСЮ конфигурацию пользователя, и цена его ошибки —
- * профили, серверы, оверлеи и раскладка кнопок разом. При этом тестов у него не
- * было ни одного: и резервная копия, и восстановление после порчи держались на
- * комментариях в коде.
+ * `SettingsStore` holds ALL of the user's configuration, so a mistake can lose
+ * profiles, servers, overlays, and button layouts all at once. Yet it had no
+ * tests at all: both the backup and recovery from corruption were supported only
+ * by comments in the code.
  *
- * Проверяется здесь не сериализация (она закрыта в [SettingsSerializationTest]),
- * а поведение на диске — то, ради чего эта запись вообще устроена сложнее, чем
- * `writeText`.
+ * This tests not serialization (covered by [SettingsSerializationTest]), but
+ * on-disk behavior — the reason this store is more complicated than `writeText`.
  */
 class SettingsStoreTest {
 
@@ -53,10 +52,10 @@ class SettingsStoreTest {
         val result = store().load()
         assertTrue(result.isSuccess)
         val loaded = result.getOrNull()!!
-        // Всё по умолчанию, КРОМЕ пароля Moblink: он генерируется при первой
-        // установке (14.09). Раньше здесь сверялось с `AppSettings()` целиком, и
-        // тест честно упал, когда поведение поменяли. И кроме признака мастера:
-        // свежая установка его ещё не прошла (16.09).
+        // Everything is default EXCEPT the Moblink password: it is generated on
+        // first install (14.09). This used to compare against `AppSettings()` as
+        // a whole, and the test correctly failed when behavior changed. Also
+        // except the onboarding flag: a fresh install has not completed it (16.09).
         assertEquals(AppSettings(moblink = loaded.moblink, onboardingDone = false), loaded)
         assertNotEquals("пароль не остался общеизвестным", "1234", loaded.moblink.password)
         assertEquals(8, loaded.moblink.password.length)
@@ -84,8 +83,8 @@ class SettingsStoreTest {
         store.save(settingsNamed("первый"))
         store.save(settingsNamed("второй"))
 
-        // Копия делается ДО подмены файла, иначе она бесполезна: обе версии
-        // оказались бы одинаковыми, и откатываться было бы не к чему.
+        // The copy is made BEFORE replacing the file; otherwise it is useless:
+        // both versions would be identical, leaving nothing to roll back to.
         val bak = File(dir, "settings.json.bak")
         assertTrue(bak.exists())
         assertTrue("в копии должно лежать предыдущее", bak.readText().contains("первый"))
@@ -97,7 +96,7 @@ class SettingsStoreTest {
         val store = store()
         store.save(settingsNamed("живой"))
         store.save(settingsNamed("новее"))
-        // Обрыв записи, севшая флешка, что угодно.
+        // Interrupted write, dead flash storage, anything.
         file.writeText("{ это не json")
 
         val loaded = store.load()
@@ -116,8 +115,8 @@ class SettingsStoreTest {
 
         val loaded = store.load()
 
-        // Молча подставить дефолты здесь нельзя: вызывающий обязан узнать, что
-        // конфигурация потеряна, и сказать об этом человеку.
+        // We must not silently substitute defaults here: the caller must learn
+        // that the configuration was lost and tell the user.
         assertTrue(loaded.isFailure)
     }
 
@@ -129,7 +128,7 @@ class SettingsStoreTest {
 
     @Test
     fun `при загрузке применяется миграция старого поля url`() {
-        // Схема сменила url на baseUrl; старые файлы на устройствах остались.
+        // The schema changed `url` to `baseUrl`; old files remain on devices.
         file.writeText(
             """
             {

@@ -45,15 +45,15 @@ class SrtlaClient {
     private val epoch = AtomicLong(0)
 
     /**
-     * Добавить канал. В простом режиме SRT второй канал не заводится вовсе.
+     * Add a link. In plain SRT mode no second link is created.
      *
-     * Мало не отправлять по нему данные: сам факт открытого сокета к тому же
-     * серверу ломает сессию. SRT привязан к паре адрес-порт, и приёмник шлёт
-     * ответы туда, откуда последним что-то получил. Полевой прогон 14.09:
-     * данные уходили по Wi-Fi, а подтверждения приходили на соту — счётчик
-     * неподтверждённых рос, адаптивный битрейт резал, эфир умирал.
+     * Simply not sending data is insufficient: an open socket to the same
+     * server breaks the session. SRT is bound to an address-port pair, and the
+     * receiver replies to the last sender. Field run 14.09: data went over Wi-Fi
+     * while acknowledgements arrived over cellular; unconfirmed packets grew,
+     * adaptive bitrate cut back, and the stream died.
      *
-     * Объединять в этом режиме всё равно нечего: серверной стороны SRTLA нет.
+     * There is nothing to aggregate in this mode: no server-side SRTLA exists.
      */
     fun addConnection(
         type: String,
@@ -90,27 +90,27 @@ class SrtlaClient {
     }
 
     /**
-     * Говорить ли по SRTLA. Ставится до [start] из разбора схемы адреса:
-     * `srtla://` — бондинг с групповой регистрацией, `srt://` — обычный
-     * приёмник, который пакетов SRTLA не знает.
+     * Whether to speak SRTLA. Set before [start] by parsing the URL scheme:
+     * `srtla://` means bonding with group registration; `srt://` means a
+     * plain receiver that does not understand SRTLA packets.
      *
-     * В простом режиме объединять нечего: серверной стороны SRTLA нет, и
-     * второй канал приёмник просто не свяжет с первым. Поэтому работает один
-     * линк — тот, что поднялся.
+     * Plain mode has nothing to aggregate: without server-side SRTLA, the
+     * receiver cannot associate a second link with the first.
+     * Only one link works: the one that connected.
      */
     @Volatile
     var useSrtla: Boolean = true
 
     /**
-     * Линк, по которому идёт весь поток в простом режиме SRT.
+     * Link carrying the entire stream in plain SRT mode.
      *
-     * В SRTLA пакеты намеренно размазываются по каналам: серверная сторона их
-     * склеивает обратно. У обычного SRT такой стороны нет — сессия привязана к
-     * паре адрес-порт, и пакеты со второго сокета сервер видит как чужие. Один
-     * линк, выбранный первым, несёт всё; остальные поднимаются, но простаивают.
+     * SRTLA deliberately spreads packets across links for the server to
+     * reassemble. Plain SRT lacks that layer: a session is bound to an
+     * address-port pair, and packets from another socket appear unrelated.
+     * The first selected link carries everything; others connect but stay idle.
      *
-     * Полевой прогон 14.09: без этого поток шёл сразу по Wi-Fi и соте, что для
-     * обычного SRT бессмысленно и ломает сессию.
+     * Field run 14.09: without this the stream used Wi-Fi and cellular together,
+     * which is meaningless for plain SRT and breaks the session.
      */
     @Volatile
     private var plainPrimary: SrtlaConnection? = null
@@ -120,7 +120,7 @@ class SrtlaClient {
         this.port = port
         epoch.incrementAndGet()
         state = State.WAIT_FOR_REMOTE_SOCKET_CONNECTED
-        // Без адреса: тег в белом списке диагностики (аудит 23.09).
+        // Omit the address: this tag is allowlisted in diagnostics (audit 23.09).
         Log.d(TAG, "srtla-client: start conns=${connections.size} epoch=${epoch.get()}")
         val startEpoch = epoch.get()
         connections.forEach {
@@ -140,8 +140,8 @@ class SrtlaClient {
         connections.forEach { it.stop() }
         epoch.addAndGet(2)
         groupId = null
-        // Иначе следующая сессия закрепится за линком прошлой — уже
-        // остановленным, и весь поток уйдёт в никуда.
+        // Otherwise the next session stays pinned to the previous session's
+        // stopped link, sending the entire stream nowhere.
         plainPrimary = null
     }
 
@@ -168,9 +168,9 @@ class SrtlaClient {
         // (handshake/ACK/NAK/keepalive) stick to the single primary link so the
         // SRT session establishes cleanly.
         val picked = when {
-            // Простой SRT: всё уходит по одному закреплённому линку, и медиа,
-            // и служебное. Раздача по каналам здесь не просто бесполезна —
-            // она рвёт сессию, потому что второй сокет для сервера чужой.
+            // Plain SRT: media and control packets all use one pinned link.
+            // Distribution across links is not merely useless: it breaks the
+            // session because the server sees the second socket as unrelated.
             !useSrtla -> plainPrimary
             Srt.isDataPacket(packet) -> selectDataConnection()
             else -> selectConnection()
@@ -187,17 +187,16 @@ class SrtlaClient {
      */
     private fun selectDataConnection(): SrtlaConnection? {
         val now = nowMillis()
-        // Этот выбор делается на КАЖДЫЙ пакет медиа — около 1300 раз в секунду.
-        // Прежняя версия на каждый из них аллоцировала ArrayList, затем ещё один
-        // список из пар (по объекту на соединение), дважды звала score() — а он
-        // берёт блокировку соединения, за которую в этот момент дерутся потоки
-        // чтения, — и дёргала java.security.SecureRandom, криптостойкий
-        // генератор, ради выбора между wifi и сотой. Замер 31.08: отправка
-        // одного пакета обходилась в ~90 мкс.
+        // This choice runs for EVERY media packet, about 1300 times per second.
+        // Previously each call allocated an ArrayList, then another list of pairs
+        // (one object per connection), called score() twice while competing with
+        // read threads for the connection lock, and invoked the cryptographic
+        // java.security.SecureRandom just to choose Wi-Fi or cellular.
+        // Measurement 31.08: sending one packet cost ~90 microseconds.
         //
-        // Теперь: один примитивный массив на вызов (без упаковки), score() по
-        // разу на соединение — заодно снимок согласован, прежние два прохода
-        // могли видеть разные значения, — и обычный ThreadLocalRandom.
+        // Now: one primitive array per call (no boxing), one score() call per
+        // connection for a consistent snapshot (two passes could see different
+        // values), and ordinary ThreadLocalRandom.
         val list = connections
         val n = list.size
         if (n == 0) return null
@@ -241,17 +240,16 @@ class SrtlaClient {
      * Pure decision for handling a failed send on [connection], isolated so it
      * can be unit-tested without sockets/threads.
      *
-     * Ни один исход больше не удаляет линк. Раньше при живом соседе делался
-     * `REMOVE`, и это было навсегда: вернуться линк мог только через
-     * `onNetworkAvailable`, а тот для той же `Network` больше не приходит —
-     * `BondingNetworkManager` схлопывает повторный `onAvailable`, а интерфейс
-     * никуда не девался. Один транзиентный `ENETUNREACH` стоил канала до конца
-     * эфира. Теперь оба исхода ведут в карантин, разница только в том, ждать ли
-     * перед первой попыткой:
-     *  - есть живой сосед (score >= 0) — [QUARANTINE]: выводим из раздачи и
-     *    поднимаем с задержкой, раздача тем временем идёт по соседу;
-     *  - линк единственный — [RETRY_NOW]: чинимся немедленно, иначе эфиру не
-     *    по чему идти. Дальнейшие неудачи всё равно уходят в лестницу задержек.
+     * No outcome removes a link anymore. Previously a live neighbor led to
+     * `REMOVE`, permanently: only `onNetworkAvailable` could restore the link,
+     * but it does not repeat for the same `Network`. `BondingNetworkManager`
+     * coalesces repeated `onAvailable` while the interface remains present.
+     * One transient `ENETUNREACH` cost a link for the rest of the stream.
+     * Both outcomes now quarantine; only the initial delay differs:
+     *  - live neighbor (score >= 0): [QUARANTINE] excludes this link and retries
+     *    later while the neighbor carries traffic;
+     *  - only link: [RETRY_NOW] repairs immediately, since the stream has no
+     *    other path. Further failures still use increasing backoff.
      */
     internal fun decideSendFailure(connection: SrtlaConnection): SendFailureAction {
         val hasOtherLive = connections.any { it !== connection && it.score() >= 0 }
@@ -290,11 +288,11 @@ class SrtlaClient {
             if (!connection.matchesEpoch(epoch.get())) return
             Log.d(TAG, "srtla-client: onSocketConnected state=$state conn=${connection.type}")
             if (!useSrtla) {
-                // В простом режиме каждый поднявшийся линк объявляем готовым
-                // сразу, не глядя на состояние клиента: иначе второй остаётся
-                // в PREREG навсегда (первый успел перевести клиент в RUNNING,
-                // и проверка состояния ниже его отсекала). Полевой прогон
-                // 13.09 показал ровно это — cellular висел в PREREG.
+                // In plain mode, immediately mark each connected link ready,
+                // regardless of client state. Otherwise the second stays in
+                // PREREG forever: the first already moved the client to RUNNING
+                // and the state check below excluded the second. Field run
+                // 13.09 showed exactly this: cellular stuck in PREREG.
                 if (state == State.WAIT_FOR_REMOTE_SOCKET_CONNECTED) {
                     state = State.WAIT_FOR_REGISTERED
                 }
@@ -302,13 +300,12 @@ class SrtlaClient {
                 connection.markReadyWithoutSrtla()
                 return
             }
-            // Пробу шлёт КАЖДЫЙ линк, подключившийся до ответа сервера, а не
-            // только первый; побеждает тот, через кого первым пришёл REG_NGP
-            // (onRegNgp ниже), — как у Moblin. Раньше линки, подключившиеся
-            // после первого, отсекались, и мёртвый первый (сота, у которой
-            // оператор режет UDP) не давал подняться бондингу при живом Wi-Fi:
-            // стенд 04.10, сценарий wifi — после возврата Wi-Fi первой в списке
-            // оказалась сота.
+            // EVERY link connected before the server response probes, not only
+            // the first. The first to receive REG_NGP wins (onRegNgp below),
+            // as in Moblin. Previously later links were excluded, so a dead
+            // first link (cellular with carrier-blocked UDP) prevented bonding
+            // despite live Wi-Fi. Test bench 04.10, wifi scenario: cellular
+            // was first in the list when Wi-Fi returned.
             if (state != State.WAIT_FOR_REMOTE_SOCKET_CONNECTED && state != State.WAIT_FOR_PROBE) return
             // Advance the state BEFORE sending probe so a fast REG_NGP cannot
             // race ahead and be dropped.

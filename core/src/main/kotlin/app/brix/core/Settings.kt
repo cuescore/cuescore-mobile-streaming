@@ -61,50 +61,50 @@ enum class ButtonAction {
 }
 
 /**
- * Откуда брать звук. Храним ТИП устройства, а не его id: id живёт до
- * переподключения, и после того как гарнитуру вынули и вставили обратно,
- * настройка указывала бы в пустоту. Тип переживает и это, и перезагрузку.
+ * Audio input source. Store the device TYPE, not its id: the id lasts only until
+ * reconnection, so unplugging and reconnecting a headset would leave the setting
+ * pointing nowhere. The type survives both reconnection and reboot.
  */
 /**
- * Как система обрабатывает звук до нас.
+ * How the system processes audio before it reaches us.
  *
- * Это не громкость и не выбор капсюля, а режим тракта: система по-разному
- * душит шум, давит эхо и жмёт динамику в зависимости от того, для чего, по её
- * мнению, идёт запись.
+ * This is neither volume nor microphone selection, but the signal-path mode:
+ * the system varies noise suppression, echo cancellation and dynamic compression
+ * depending on what it thinks the recording is for.
  */
 @Serializable
 enum class AudioProcessing {
-    /** Для видео. Разумное умолчание: ровный уровень, без агрессивной чистки. */
+    /** For video. A sensible default: steady levels without aggressive filtering. */
     CAMCORDER,
 
-    /** Обычный микрофон. */
+    /** Standard microphone. */
     MIC,
 
-    /** Без обработки вообще. Для музыки и когда всё чистят снаружи. */
+    /** No processing. For music or when all filtering is handled externally. */
     UNPROCESSED,
 
-    /** Для разговора: давит эхо и шум сильнее всего, но и голос обрабатывает. */
+    /** For calls: strongest echo and noise suppression, but also processes the voice. */
     VOICE_COMMUNICATION,
 }
 
 @Serializable
 enum class MicSource {
-    /** Как решит система — обычно нижний, но гарнитура перехватывает. */
+    /** System choice: usually the bottom microphone, overridden by a headset. */
     AUTO,
 
-    /** Встроенный, когда телефон не различает капсюли. */
+    /** Built-in microphone when the phone does not distinguish individual capsules. */
     BUILTIN,
 
-    /** Нижний капсюль — тот, в который говорят по телефону. */
+    /** Bottom capsule: the microphone used for phone calls. */
     BUILTIN_BOTTOM,
 
-    /** Капсюль у камеры. Замер на S21 03.09: `getDevices()` отдаёт его
-     *  отдельным устройством того же типа `TYPE_BUILTIN_MIC`, различая по
-     *  `address` («bottom» против «back»). Значит выбрать конкретный капсюль
-     *  можно, и это ровно то, что даёт Moblin на iOS через data sources. */
+    /** Capsule near the camera. Measured on S21 on 03.09: `getDevices()` exposes it
+     *  as a separate device of the same `TYPE_BUILTIN_MIC` type, distinguished by
+     *  `address` ("bottom" versus "back"). Individual capsules can therefore be
+     *  selected, just as Moblin on iOS allows through data sources. */
     BUILTIN_BACK,
 
-    /** Верхний капсюль. На S21 не встречается, но многие телефоны его отдают. */
+    /** Top capsule. Not exposed on S21, but many phones provide it. */
     BUILTIN_TOP,
 
     WIRED,
@@ -140,21 +140,21 @@ data class AudioSettings(
     val sampleRate: Int = 48_000,
     val bitrateKbps: Int = 128,
     val stereo: Boolean = true,
-    /** Усиление микрофона: 1.0 — как есть, 2.0 — вдвое громче. Тихая петличка
-     *  или ветрозащита легко режут уровень так, что в эфире шёпот. */
+    /** Microphone gain: 1.0 leaves it unchanged, 2.0 doubles the level. A quiet lavalier
+     *  or windscreen can reduce the level enough to sound like a whisper on stream. */
     val micGain: Float = 1f,
     val micSource: MicSource = MicSource.AUTO,
     /**
-     * Какое именно устройство выбранного типа, по человеческому имени
-     * (`AudioDeviceInfo.productName` — «WH-1000XM4»).
+     * The specific device of the selected type, identified by its readable name
+     * (`AudioDeviceInfo.productName`, e.g. "WH-1000XM4").
      *
-     * Тип сам по себе не различает два устройства: при двух Bluetooth-гарнитурах
-     * бралась первая попавшаяся. Имя переживает переподключение, в отличие от
-     * `id`, и — в отличие от `address` у Bluetooth — не является MAC-адресом,
-     * поэтому его можно хранить и показывать.
+     * Type alone cannot distinguish two devices: with two Bluetooth headsets,
+     * the first one found was used. Unlike `id`, the name survives reconnection;
+     * unlike Bluetooth `address`, it is not a MAC address, so it can be stored
+     * and displayed.
      *
-     * Пусто — «любое устройство этого типа». Если названного устройства сейчас
-     * нет, откатываемся на тип: остаться без звука хуже, чем взять соседний.
+     * Empty means "any device of this type". If the named device is unavailable,
+     * fall back to the type: no audio is worse than using another device.
      */
     val micDeviceName: String = "",
     val processing: AudioProcessing = AudioProcessing.CAMCORDER,
@@ -201,16 +201,17 @@ data class ConnectionPriority(
     val name: String,
     val enabled: Boolean = true,
     /**
-     * Ранг канала, 1…10. Доля канала — weight / Σ(весов включённых), 0 — выключен.
+     * Link rank, 1..10. Its share is weight / sum(enabled weights); 0 means disabled.
      *
-     * **Почему 1…10, а не 0…100 как было.** Вес уходит в `SrtlaConnection.score()`,
-     * а там формула `scaledPriority = 1 + (priority - 1) * factor` — она пришла из
-     * srtla/BELABOX и рассчитана на РАНГ, небольшое число около единицы. Мы же
-     * подставляли туда 0–100: при весе 41 получался разброс в сорок раз там, где
-     * алгоритм ожидал разы. Сто ступеней на палец вдобавок никому не нужны, а само
-     * число ни о чём не говорит — 4 против 10 и 41 против 98 дают одно и то же.
+     * **Why 1..10 instead of the former 0..100.** The weight goes into
+     * `SrtlaConnection.score()`, whose `scaledPriority = 1 + (priority - 1) * factor`
+     * formula comes from srtla/BELABOX and expects a RANK: a small number near one.
+     * We supplied 0..100 instead: weight 41 produced a fortyfold spread where the
+     * algorithm expected only a fewfold difference. A hundred slider steps are
+     * unnecessary, and the numbers add no meaning: 4 versus 10 and 41 versus 98
+     * express essentially the same thing.
      *
-     * Старые значения переводятся в `migrate()`.
+     * Legacy values are converted in `migrate()`.
      */
     val weight: Int = 0,
 )
@@ -227,7 +228,7 @@ data class AppearanceSettings(
 data class MoblinkSettings(
     val enabled: Boolean = false,
     val port: Int = 7777,
-    /** Пароль релея. Генерируется при первой установке — см. [generateMoblinkPassword]. */
+    /** Relay password. Generated on first installation; see [generateMoblinkPassword]. */
     val password: String = "1234",
     /** Weight applied to every connected relay's channel in the SRTLA aggregate
      *  (same scale as [ConnectionPriority.weight]). Relays are dynamic in count,
@@ -237,98 +238,97 @@ data class MoblinkSettings(
 )
 
 /**
- * Чат Twitch, показанный на экране стримера (не в потоке — см. HudConfig).
+ * Twitch chat displayed on the streamer's screen (not in the stream; see HudConfig).
  *
- * Анонимное чтение не требует токена: логин `justinfanNNNNN` без пароля.
- * Отправка сообщений сюда сознательно не входит — второй заход, отдельный
- * OAuth-поток.
+ * Anonymous reading needs no token: login `justinfanNNNNN` without a password.
+ * Sending messages is deliberately out of scope: a later iteration with a
+ * separate OAuth flow.
  */
 @Serializable
 data class ChatSettings(
-    /** Имя поля осталось от версии с одним Twitch — переименовывать нельзя,
-     *  сериализованные настройки на телефонах уже используют этот ключ. */
+    /** Field name retained from the Twitch-only version: it cannot be renamed,
+     *  because serialized settings on users' phones already use this key. */
     val enabled: Boolean = false,
-    /** Без "#" и без домена — как вводится на twitch.tv/<канал>. */
+    /** Without "#" or a domain, as entered at twitch.tv/<channel>. */
     val twitchChannel: String = "",
     val kickEnabled: Boolean = false,
-    /** Slug канала — часть адреса kick.com/<slug>. */
+    /** Channel slug: the relevant part of kick.com/<slug>. */
     val kickChannel: String = "",
     val vkEnabled: Boolean = false,
-    /** Полный адрес канала, как в parameter channel_url их API (например
-     *  https://live.vkvideo.ru/<канал>). */
+    /** Full channel URL, as in their API's channel_url parameter (for example,
+     *  https://live.vkvideo.ru/<channel>). */
     val vkChannelUrl: String = "",
-    /** Ключи Приложения с dev.live.vkvideo.ru — обязательны для VK: в отличие
-     *  от Twitch/Kick, у них нет анонимного чтения, только ClientCredentials
-     *  (приложение, без входа пользователя). Хранятся в открытом виде, как
-     *  пароль Moblink — риск ограничен чтением чата этим приложением. */
+    /** Application credentials from dev.live.vkvideo.ru, required for VK: unlike
+     *  Twitch/Kick, it has no anonymous reading, only ClientCredentials
+     *  (application authentication without user login). Stored in plain text,
+     *  like the Moblink password; the risk is limited to this app reading chat. */
     val vkClientId: String = "",
     val vkClientSecret: String = "",
-    /** Якорь панели на экране, доли 0..1 (0.5,0.5 — центр) — та же схема,
-     *  что у [OverlayConfig.posX]/[posY]. */
+    /** Panel anchor on screen, fractions 0..1 (0.5,0.5 is the center), using
+     *  the same scheme as [OverlayConfig.posX]/[posY]. */
     val posX: Float = 0.16f,
     val posY: Float = 0.5f,
-    /** Размер панели как доли экрана. */
+    /** Panel size as fractions of the screen. */
     val width: Float = 0.28f,
     val height: Float = 0.42f,
-    /** Множитель размера шрифта сообщений. */
+    /** Message font-size multiplier. */
     val fontScale: Float = 1f,
-    /** Эмодзи 7TV и BTTV в чатах Twitch и Kick. Выключено по умолчанию:
-     *  это запросы к сторонним сервисам с именем канала. */
+    /** 7TV and BTTV emotes in Twitch and Kick chats. Disabled by default:
+     *  these requests send the channel name to third-party services. */
     val thirdPartyEmotes: Boolean = false,
 )
 
 /**
- * ЗАМЕНЯЕТ прежний комментарий, который к 03.09 устарел дважды.
+ * REPLACES the previous comment, which was outdated in two ways by 03.09.
  *
- * Он говорил «не подключено к рендерингу» — теперь подключено. И он объявлял,
- * что пустой список слоёв означает «взять глобальный набор». Сделано иначе:
- * **пустой список означает чистую картинку.** Иначе сцену нельзя было бы
- * использовать ровно для того, ради чего её чаще всего заводят — убрать всё
- * лишнее из кадра. Поведение закреплено тестом и объяснено человеку прямо в
- * диалоге сцены. «Как было раньше» при этом сохранено там, где это важно: пока
- * не создано НИ ОДНОЙ сцены, показывается всё включённое.
+ * It said "not connected to rendering"; it now is. It also claimed that an empty
+ * layer list meant "use the global set". The implementation differs:
+ * **an empty list means a clean picture.** Otherwise scenes could not serve their
+ * most common purpose: removing everything unnecessary from the frame.
+ * A test enforces this behavior, and the scene dialog explains it to the user.
+ * Legacy behavior is preserved where it matters: until ANY scene is created,
+ * everything enabled is shown.
  */
 /**
- * Что сцена показывает в кадре.
+ * What the scene displays in the frame.
  *
- * Проверено 03.09 по библиотеке и по железу:
- * - двух камер одновременно S21 не даёт (камеры перечисляют друг друга как
- *   конфликтующие), поэтому «картинки в картинке» из двух камер не будет;
- * - UVC-камеры в RootEncoder нет вовсе, для неё нужна сторонняя библиотека;
- * - а вот экран, видеофайл и растр есть из коробки.
+ * Checked against the library and hardware on 03.09:
+ * - S21 cannot use two cameras simultaneously (they list each other as conflicting),
+ *   so picture-in-picture with two cameras is unavailable;
+ * - RootEncoder has no UVC camera support; a third-party library is needed;
+ * - screen capture, video files and bitmaps are supported out of the box.
  */
 @Serializable
 enum class SceneSource {
-    /** Камера телефона, сторона берётся из [Scene.camera]. */
+    /** Phone camera; the side comes from [Scene.camera]. */
     CAMERA,
 
-    /** Заставка: неподвижная картинка вместо камеры. То, что IRL-стримеру
-     *  нужно постоянно — «сейчас вернусь», не обрывая эфир. */
+    /** Holding screen: a still image instead of the camera. An IRL streaming
+     *  staple: "be right back" without interrupting the broadcast. */
     IMAGE,
 
-    /** Экран телефона: карта, игра, чат — всё, что видит сам стример.
-     *  Требует согласия пользователя на захват, и оно спрашивается заново при
-     *  каждом запуске приложения: сохранить его Android не даёт. */
+    /** Phone screen: a map, game, chat, or anything the streamer sees.
+     *  Requires capture consent, requested again on each app launch:
+     *  Android does not allow it to be saved. */
     SCREEN,
 }
 
 /**
- * Откуда сцена берёт звук.
+ * Where the scene gets its audio.
  *
- * Захват звука самого телефона идёт через тот же токен, что и захват экрана,
- * поэтому требует того же согласия пользователя. И разрешает его не всякое
- * приложение: игры обычно да, музыкальные сервисы почти всегда нет — это их
- * флаг, обойти нельзя.
+ * Capturing the phone's own audio uses the same token as screen capture, so it
+ * requires the same user consent. Not every app permits it: games usually do,
+ * music services almost never do. This is their flag and cannot be bypassed.
  */
 @Serializable
 enum class SceneAudio {
-    /** Только микрофон — как было всегда. */
+    /** Microphone only, as before. */
     MIC,
 
-    /** Только звук телефона: игра, видео, музыка. */
+    /** Phone audio only: games, videos, music. */
     INTERNAL,
 
-    /** И то и другое: комментарий поверх звука игры. */
+    /** Both: commentary over game audio. */
     BOTH,
 }
 
@@ -338,10 +338,10 @@ data class Scene(
     val name: String,
     val source: SceneSource = SceneSource.CAMERA,
     val audio: SceneAudio = SceneAudio.MIC,
-    /** Картинка заставки: content-URI из системного выбора файлов. */
+    /** Holding-screen image: content URI from the system file picker. */
     val imageUri: String = "",
     val camera: CameraSide = CameraSide.BACK,
-    /** Виджеты сцены — единый список, см. [SceneWidget]. */
+    /** Scene widgets: a unified list; see [SceneWidget]. */
     val widgetIds: List<String> = emptyList(),
     @Deprecated("Слито в widgetIds, читается только миграцией.")
     val overlayIds: List<String> = emptyList(),
@@ -352,9 +352,9 @@ data class Scene(
 @Serializable
 data class AdvancedSettings(
     val recordStream: Boolean = false,
-    /** Запись сессии эфира в CSV на телефоне: мощность, температура, тепловой
-     *  статус и цифры транспорта раз в секунду. Нужна там, где logcat
-     *  недоступен — двухчасовой выход с пауэрбанком без кабеля. */
+    /** Record the streaming session to CSV on the phone: power, temperature,
+     *  thermal status and transport metrics once per second. Useful when logcat
+     *  is unavailable, e.g. a two-hour outing with a power bank and no cable. */
     val debugLog: Boolean = false,
 )
 
@@ -366,10 +366,9 @@ data class HudConfig(
     val showBitrate: Boolean = true,
     val showUptime: Boolean = true,
     val showVersion: Boolean = true,
-    /** Название текущей сцены. Когда сцен больше одной, по кадру не всегда
-     *  видно, какая включена — особенно если две сцены отличаются только
-     *  набором слоёв. Строка идёт только на экран стримера, в поток не
-     *  попадает. */
+    /** Current scene name. With multiple scenes, the picture does not always
+     *  reveal which is active, especially when they differ only in their layers.
+     *  This line appears only on the streamer's screen, not in the stream. */
     val showScene: Boolean = true,
     val showViewers: Boolean = true,
     val showAudioLevel: Boolean = true,
@@ -446,18 +445,18 @@ data class KickIntegration(
 data class CameraDefaults(
     val torchOnStart: Boolean = false,
     val defaultCamera: CameraSide = CameraSide.BACK,
-    /** Электронная стабилизация: подрезает кадр, зато гасит крупную тряску. */
+    /** Electronic stabilization: crops the frame but suppresses large shakes. */
     val stabilization: Boolean = false,
-    /** Оптическая: качает линзу, кадр не режет, но справляется только с мелким
-     *  дрожанием. Отдельный переключатель, потому что это разные механизмы с
-     *  разной ценой — библиотека даёт их раздельно, а мы до 04.09 использовали
-     *  только электронную. */
+    /** Optical stabilization: moves the lens without cropping, but handles only
+     *  small vibrations. Separate toggle because these mechanisms have different
+     *  tradeoffs. The library exposes them separately; before 04.09 we used
+     *  only electronic stabilization. */
     val opticalStabilization: Boolean = false,
-    /** Зеркалить фронталку в ПРЕВЬЮ — так ведут себя камерные приложения. */
+    /** Mirror the front camera in the PREVIEW, as camera apps do. */
     val mirrorFront: Boolean = true,
-    /** Зеркалить фронталку В ЭФИРЕ. Отдельно от превью: стримеру привычно
-     *  видеть себя зеркально, а зрителю — как в жизни, иначе весь текст в кадре
-     *  читается наоборот. По умолчанию выключено именно поэтому. */
+    /** Mirror the front camera IN THE STREAM. Separate from preview: streamers
+     *  expect a mirror image, but viewers expect a real-world view; otherwise
+     *  all text in the frame is reversed. Disabled by default for this reason. */
     val mirrorFrontInStream: Boolean = false,
     /** false = continuous autofocus only (default); true = tap-to-focus mode
      *  (tap a point on the preview to lock focus there briefly). */
@@ -499,38 +498,37 @@ data class ServerProfile(
     val baseUrl: String = "",
     val streamId: String = "",
     val latencyMs: Int = 2000,
-    /** Брать при разрешении имени только IPv4. Некоторые операторы и приёмники
-     *  ведут себя с IPv6 хуже: соединение встаёт, а данные не идут. */
+    /** Use only IPv4 when resolving names. Some carriers and receivers handle
+     *  IPv6 poorly: the connection establishes, but no data flows. */
     val preferIpv4: Boolean = false,
     val enabled: Boolean = true,
 ) {
     /**
-     * Адрес, по которому реально подключаемся.
+     * The URL actually used to connect.
      *
-     * У RTMP ключ трансляции — это последний сегмент пути: площадки выдают
-     * отдельно адрес ингеста и отдельно ключ, а протокол ждёт их склеенными.
-     * Поэтому [streamId] хранится отдельно и приклеивается здесь: в форме он
-     * скрыт точками, а в [baseUrl] остаётся только адрес, который можно
-     * показать кому угодно.
+     * For RTMP, the stream key is the last path segment: platforms provide the
+     * ingest URL and key separately, but the protocol expects them joined.
+     * Therefore [streamId] is stored separately and appended here: the form masks
+     * it with dots, leaving only a URL safe to show anyone in [baseUrl].
      *
-     * Профили, заведённые до появления отдельного поля, держат ключ прямо в
-     * [baseUrl] и имеют пустой [streamId] — для них ничего не меняется.
+     * Profiles created before the separate field keep the key in [baseUrl]
+     * and have an empty [streamId]; their behavior is unchanged.
      *
-     * У SRTLA ключ устроен иначе (параметр `streamid` в запросе) и разбирается
-     * транспортом из самого адреса, поэтому здесь он не трогается.
+     * SRTLA keys work differently (the `streamid` query parameter) and are parsed
+     * from the URL by the transport, so they are not modified here.
      */
     fun connectUrl(): String {
         val key = streamId.trim()
         if (key.isEmpty()) return baseUrl
         return when (type) {
-            // У RTMP ключ — последний сегмент пути.
+            // For RTMP, the key is the last path segment.
             ServerType.RTMP -> baseUrl.trimEnd('/') + "/" + key.trimStart('/')
-            // У SRTLA — параметр `streamid` в запросе, и внутри него обычно
-            // сидит `srtauth` с ключом доступа к приёмнику. Всё, что было в
-            // запросе у baseUrl, отбрасывается: раз поле заполнено, оно и есть
-            // источник истины, иначе получились бы два streamid подряд.
+            // For SRTLA, use the `streamid` query parameter, which usually contains
+            // `srtauth` with the receiver's access key. Discard the existing query
+            // in baseUrl: once this field is filled, it is the source of truth;
+            // otherwise we would end up with two streamid parameters.
             ServerType.SRTLA -> baseUrl.substringBefore('?').trimEnd('/') + "?streamid=" + key
-            // У WHIP ключ в адрес не выносится.
+            // For WHIP, the key is not included in the URL.
             ServerType.WHIP -> baseUrl
         }
     }
@@ -552,21 +550,21 @@ data class OverlayConfig(
     /** Mix alert audio into the stream (viewers hear it). */
     val audioInStream: Boolean = false,
     /**
-     * Размер подписи (имя, сумма, сообщение) — множитель, 1.0 это исходный.
+     * Caption size (name, amount, message): a multiplier, with 1.0 as the original.
      *
-     * **Зачем своя настройка.** Раньше размер текста считался от ШИРИНЫ КАРТИНКИ
-     * через константу 0.18, и единственным способом повлиять на текст было менять
-     * размер окна оверлея наугад. Владелец 14.09: «фиксится только если поменять
-     * размер окна донатного виджета на угад».
+     * **Why a separate setting.** Text size used to derive from IMAGE WIDTH using
+     * the constant 0.18, so the only way to affect it was to randomly resize the
+     * overlay window. The owner on 14.09: "it only gets fixed if you randomly
+     * change the donation widget's window size".
      */
     val captionScale: Float = 1f,
     /**
-     * Показывать ли подпись. Выключается, когда виджет площадки рисует текст сам.
+     * Whether to show the caption. Disable when the platform widget draws its own text.
      *
-     * **Выбора «сверху или снизу» здесь намеренно нет.** Порядок в донат-алерте
-     * устоявшийся: картинка, под ней ник и сумма, под ними текст сообщения. Люди
-     * к нему привыкли, и давать ручку, которая его ломает, — не гибкость, а
-     * способ сделать непривычно (владелец, 14.09).
+     * **There is deliberately no "above or below" option.** Donation alerts follow
+     * an established order: image, then nickname and amount, then message text.
+     * Users expect it; a control that breaks this order adds unfamiliar behavior
+     * rather than flexibility (the owner, 14.09).
      */
     val captionVisible: Boolean = true,
 )
@@ -591,74 +589,73 @@ data class BrowserWidgetConfig(
 )
 
 /**
- * Тип виджета сцены.
+ * Scene widget type.
  *
- * Раньше списков было два — «Оверлеи» (донат-алерты) и «Браузерные виджеты», и
- * человеку приходилось угадывать, куда класть очередную вещь: один браузерный
- * виджет доната шёл в первый список, другой во второй (владелец, 14.09).
- * Разделение при этом было не по смыслу для человека, а по нашей реализации.
+ * Previously there were two lists: "Overlays" (donation alerts) and "Browser widgets".
+ * Users had to guess where each item belonged: one browser-based donation widget
+ * went in the first list, another in the second (the owner, 14.09).
+ * The distinction reflected our implementation, not meaning for the user.
  *
- * Второе, что оно ломало, — расход. Всё, кроме донат-алерта, ехало через
- * WebView, то есть «повесить картинку» стоило целого браузера: замерено 9–10%
- * ядра на виджет, и два виджета легко превращались в четыре. Типы
- * [WidgetKind.IMAGE] и [WidgetKind.TEXT] рисуются нативно и WebView не заводят
- * вовсе.
+ * Resource use was the other problem. Everything except donation alerts used a
+ * WebView, so "add an image" cost an entire browser: measured at 9-10% of a core
+ * per widget, and two widgets could easily become four. [WidgetKind.IMAGE] and
+ * [WidgetKind.TEXT] render natively without creating a WebView at all.
  */
 @Serializable
 enum class WidgetKind {
-    /** Донат-алерт: страница площадки, из которой мы вылавливаем алерты. */
+    /** Donation alert: a platform page from which we extract alerts. */
     DONATION_ALERT,
 
-    /** Произвольная веб-страница, снимок раз в [SceneWidget.refreshMs]. */
+    /** Arbitrary web page, snapshotted every [SceneWidget.refreshMs]. */
     WEB,
 
-    /** Локальная картинка (PNG/GIF), без браузера. */
+    /** Local image (PNG/GIF), without a browser. */
     IMAGE,
 
-    /** Строка текста с подстановками, без браузера. */
+    /** Text with substitutions, without a browser. */
     TEXT,
 }
 
 /**
- * Виджет сцены — единая замена [OverlayConfig] и [BrowserWidgetConfig].
+ * Scene widget: a unified replacement for [OverlayConfig] and [BrowserWidgetConfig].
  *
- * Поля, осмысленные не для всех типов, лежат здесь же, а не в наследниках:
- * запись на диск идёт через kotlinx, а полиморфная сериализация ради четырёх
- * типов усложнила бы и файл, и миграцию. Незначащие поля просто не читаются.
+ * Fields that apply only to some types live here rather than in subclasses:
+ * persistence uses kotlinx, and polymorphic serialization for four types would
+ * complicate both the file and migration. Irrelevant fields are simply not read.
  */
 @Serializable
 data class SceneWidget(
     val id: String,
     val kind: WidgetKind = WidgetKind.DONATION_ALERT,
-    /** Имя в списке. Пустое — показываем адрес или тип. */
+    /** List name. When empty, show the URL or type. */
     val name: String = "",
     val enabled: Boolean = true,
-    /** Якорь на кадре, доли 0..1 (0.5,0.5 — центр). */
+    /** Frame anchor, fractions 0..1 (0.5,0.5 is the center). */
     val posX: Float = 0.5f,
     val posY: Float = 0.5f,
-    /** Размер как доли ширины и высоты кадра. */
+    /** Size as fractions of frame width and height. */
     val width: Float = 0.18f,
     val height: Float = 0.18f,
-    /** [WidgetKind.DONATION_ALERT] и [WidgetKind.WEB]. */
+    /** [WidgetKind.DONATION_ALERT] and [WidgetKind.WEB]. */
     val url: String = "",
-    /** [WidgetKind.DONATION_ALERT]: звук алерта в динамик телефона. */
+    /** [WidgetKind.DONATION_ALERT]: alert audio through the phone speaker. */
     val audioOnDevice: Boolean = false,
-    /** [WidgetKind.DONATION_ALERT]: звук алерта в эфир. */
+    /** [WidgetKind.DONATION_ALERT]: alert audio in the stream. */
     val audioInStream: Boolean = false,
-    /** [WidgetKind.DONATION_ALERT]: множитель размера подписи. */
+    /** [WidgetKind.DONATION_ALERT]: caption-size multiplier. */
     val captionScale: Float = 1f,
-    /** [WidgetKind.DONATION_ALERT]: рисовать ли подпись самим. */
+    /** [WidgetKind.DONATION_ALERT]: whether we draw the caption ourselves. */
     val captionVisible: Boolean = true,
-    /** [WidgetKind.WEB]: период пересъёмки WebView, мс. Съёмка дорогая. */
+    /** [WidgetKind.WEB]: WebView snapshot interval in ms. Snapshotting is expensive. */
     val refreshMs: Long = 200L,
-    /** [WidgetKind.IMAGE]: content-URI из системного выбора файлов. */
+    /** [WidgetKind.IMAGE]: content URI from the system file picker. */
     val imageUri: String = "",
-    /** [WidgetKind.TEXT]: строка с подстановками вида {time}. */
+    /** [WidgetKind.TEXT]: text with substitutions such as {time}. */
     val template: String = "",
-    /** [WidgetKind.TEXT]: множитель размера шрифта. */
+    /** [WidgetKind.TEXT]: font-size multiplier. */
     val textScale: Float = 1f,
 ) {
-    /** Что показать в списке, когда имя не задано. */
+    /** What to display in the list when no name is set. */
     fun displayTitle(): String = when {
         name.isNotBlank() -> name
         kind == WidgetKind.TEXT -> template
@@ -694,9 +691,9 @@ data class SceneWidget(
 
 @Serializable
 data class AppSettings(
-    /** Настройки звука общие для всех профилей. Раньше лежали в каждом
-     *  профиле копией: человек правил их в одном месте, а при переключении
-     *  профиля получал другие — и понять почему было неоткуда. */
+    /** Audio settings shared by all profiles. Previously each profile held a copy:
+     *  users edited them in one place, then switching profiles changed the settings
+     *  with no indication why. */
     val audio: AudioSettings = AudioSettings(),
     val streamProfiles: List<StreamProfile> = emptyList(),
     val serverProfiles: List<ServerProfile> = emptyList(),
@@ -717,14 +714,13 @@ data class AppSettings(
     val scenes: List<Scene> = emptyList(),
     val selectedSceneId: String? = null,
     /**
-     * Пройден ли мастер первого запуска.
+     * Whether the first-run wizard has been completed.
      *
-     * `null` — файл записан до появления мастера (16.09): такой человек уже
-     * пользуется приложением, и `migrate()` ставит `true`, чтобы мастер не
-     * выскочил поверх настроенного эфира. Свежая установка получает явный
-     * `false` из [defaultAppSettings]. Обычный `false` по умолчанию не годится:
-     * kotlinx не пишет значения по умолчанию на диск, и старый файл от нового
-     * было бы не отличить.
+     * `null` means the file predates the wizard (16.09): the user already uses
+     * the app, so `migrate()` sets `true` to avoid showing the wizard over a
+     * configured stream. Fresh installs get an explicit `false` from
+     * [defaultAppSettings]. A plain `false` default would not work: kotlinx omits
+     * default values when writing to disk, making old and new files indistinguishable.
      */
     val onboardingDone: Boolean? = null,
     val twitch: TwitchIntegration = TwitchIntegration(),
@@ -752,11 +748,11 @@ data class AppSettings(
     fun selectedScene(): Scene? = scenes.firstOrNull { it.id == selectedSceneId }
 
     /**
-     * Оверлеи, которые сейчас в кадре.
+     * Overlays currently in the frame.
      *
-     * Пока сцен нет — всё включённое, как было до их появления. Заводить сцену
-     * не должно означать «теперь настраивай заново»: у кого сцен нет, для того
-     * ничего не меняется.
+     * Until scenes exist, show everything enabled, as before scenes were introduced.
+     * Adding scenes must not mean "configure everything again": users without
+     * scenes see no change.
      */
     fun activeWidgets(): List<SceneWidget> {
         val scene = selectedScene() ?: return widgets
@@ -776,12 +772,11 @@ data class AppSettings(
     fun migrate(): AppSettings {
         val migratedServers = serverProfiles.map { server ->
             if (server.baseUrl.isBlank() && !server.url.isNullOrBlank()) {
-                // Старое поле дочищаем: иначе оно переписывается на диск при
-                // каждом сохранении и живёт устаревшим дублем baseUrl — правку
-                // адреса оно не увидит, а следующий, кто в него заглянет,
-                // получит адрес, по которому уже никто не вещает. Читателей у
-                // него нет ни в одном модуле (проверено), поэтому чистка
-                // безопасна, и миграция становится идемпотентной.
+                // Clear the old field; otherwise every save writes a stale duplicate
+                // of baseUrl back to disk. URL edits would not update it, and its
+                // next reader would get an address no longer used for broadcasting.
+                // No module reads it (verified), so clearing it is safe and makes
+                // migration idempotent.
                 server.copy(baseUrl = server.url, url = null)
             } else {
                 server
@@ -804,10 +799,10 @@ data class AppSettings(
         } else {
             overlays
         }
-        // Звук переезжает из профиля в общие настройки. Берём его у выбранного
-        // профиля — именно он и был виден пользователю на экране «Аудио».
-        // Условие «общие ещё по умолчанию» делает миграцию однократной: после
-        // первого сохранения она больше не срабатывает и не затирает правки.
+        // Move audio from the profile to shared settings. Use the selected profile,
+        // since that was what the user saw on the Audio screen. Requiring shared
+        // settings to still have defaults makes this a one-time migration:
+        // after the first save it no longer runs or overwrites edits.
         @Suppress("DEPRECATION")
         val migratedAudio = if (audio == AudioSettings()) {
             (streamProfiles.firstOrNull { it.id == selectedStreamProfileId } ?: streamProfiles.firstOrNull())
@@ -815,16 +810,15 @@ data class AppSettings(
         } else {
             audio
         }
-        // Веса каналов переведены из 0…100 в ранг 1…10 (14.09). Значение больше
-        // десяти заведомо старое — делим и округляем вверх, чтобы 1…9 не схлопнулись
-        // в ноль и канал не выключился молча. Значения 10 и меньше уже годны как ранг
-        // и остаются как есть, поэтому миграция идемпотентна.
-        // Устаревший звук профиля после переноса обнуляем: источник миграции
-        // «съедается», и она становится однократной по-настоящему. Раньше
-        // условие «общие настройки равны умолчанию» срабатывало снова, стоило
-        // человеку сбросить звук к умолчанию, — и тянуло старое поле профиля.
-        // Заодно это поле (в нём и имя гарнитуры) перестаёт уезжать в экспорт
-        // ссылкой и в диагностику: kotlinx умолчания не пишет (аудит 23.09).
+        // Link weights changed from 0..100 to ranks 1..10 (14.09). Values above ten
+        // are necessarily legacy: divide and round up so 1..9 do not collapse to
+        // zero and silently disable a link. Values at or below 10 are valid ranks
+        // and remain unchanged, making migration idempotent.
+        // Reset deprecated profile audio after moving it: consuming the migration
+        // source makes it genuinely one-time. Previously, resetting shared audio
+        // to defaults satisfied the condition again and restored the old profile
+        // field. This also keeps that field (including the headset name) out of
+        // link exports and diagnostics: kotlinx omits defaults (audit 23.09).
         @Suppress("DEPRECATION")
         val migratedProfiles = streamProfiles.map { profile ->
             profile.copy(
@@ -834,21 +828,21 @@ data class AppSettings(
                 audio = AudioSettings(),
             )
         }
-        // Пароль «1234» был значением по умолчанию до 14.09, то есть общеизвестным
-        // для всех, у кого стоит приложение. Меняем на случайный. Настроенную пару
-        // это рассорило бы, но Moblink со вторым телефоном ни разу не работал —
-        // ломать нечего, а оставлять известный пароль у службы в локальной сети
-        // нельзя. Миграция идемпотентна: после замены значение уже не «1234».
+        // "1234" was the default password before 14.09, known to anyone with the app.
+        // Replace it with a random value. This would disrupt a configured pair,
+        // but Moblink has never worked with a second phone, so there is nothing
+        // to break; a local-network service cannot retain a known password.
+        // Migration is idempotent: the replacement is no longer "1234".
         val migratedMoblink = if (moblink.password == "1234") {
             moblink.copy(password = generateMoblinkPassword())
         } else {
             moblink
         }
-        // Два списка сливаются в один (14.09). Порядок — сначала донат-алерты,
-        // потом браузерные: так он выглядел на экранах, и человек находит свои
-        // виджеты там же, где привык. Старые списки после переноса чистим,
-        // иначе они лежат на диске вечным дублем и миграция не идемпотентна:
-        // достаточно один раз удалить виджет, и он вернётся при следующем чтении.
+        // Merge two lists into one (14.09), donation alerts first, browser widgets
+        // second. This matches their previous screen order, keeping widgets where
+        // users expect them. Clear the old lists after moving them; otherwise they
+        // remain permanent duplicates on disk and migration is not idempotent:
+        // deleting a widget would restore it on the next read.
         val migratedWidgets = if (widgets.isEmpty() && (migratedOverlays.isNotEmpty() || browserWidgets.isNotEmpty())) {
             migratedOverlays.map { o ->
                 SceneWidget(
@@ -881,9 +875,9 @@ data class AppSettings(
         } else {
             widgets
         }
-        // Сцены ссылались на два списка идентификаторов; сводим в один. Условие
-        // «widgetIds пуст» делает перенос однократным — иначе сцена, из которой
-        // виджет намеренно убрали, получала бы его обратно.
+        // Scenes referenced two ID lists; merge them into one. Requiring empty
+        // widgetIds makes the transfer one-time; otherwise a widget deliberately
+        // removed from a scene would be restored.
         val migratedScenes = scenes.map { scene ->
             if (scene.widgetIds.isEmpty() && (scene.overlayIds.isNotEmpty() || scene.browserWidgetIds.isNotEmpty())) {
                 scene.copy(
@@ -910,15 +904,15 @@ data class AppSettings(
 }
 
 /**
- * Пароль для Moblink, пригодный к вводу руками.
+ * Moblink password suitable for manual entry.
  *
- * **Почему не длинный hex.** Этот пароль человек читает с одного телефона и набирает
- * на другом, обычно на улице. Тридцать два знака никто не введёт, а значит заменит
- * на «1234» — и мы вернёмся туда, откуда ушли. Восемь знаков из однозначного
- * алфавита дают около сорока бит: для службы, доступной только в своей локальной
- * сети и только пока идёт эфир, этого достаточно.
+ * **Why not a long hex string.** Users read this password on one phone and enter it
+ * on another, usually outdoors. Nobody will type thirty-two characters; they would
+ * replace it with "1234", bringing us back to square one. Eight characters from an
+ * unambiguous alphabet provide about forty bits: enough for a service accessible
+ * only on the local network and only while streaming.
  *
- * Из алфавита выброшены пары, которые путают при наборе: 0 и o, 1 и l с i.
+ * The alphabet excludes easily confused characters: 0 and o, 1 and l/i.
  */
 fun generateMoblinkPassword(): String {
     val alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
@@ -942,26 +936,24 @@ fun defaultQuickButtonSlots(): List<QuickButtonSlot> = listOf(
 )
 
 /**
- * Восстанавливает инвариант «хотя бы один стрим-профиль», НЕ теряя остального.
+ * Restores the "at least one stream profile" invariant WITHOUT losing other settings.
  *
- * Раньше загрузка делала `takeIf { streamProfiles.isNotEmpty() } ?: defaultAppSettings()`,
- * то есть пустой список профилей выбрасывал ВЕСЬ файл настроек: серверы,
- * оверлеи, раскладку быстрых кнопок, умолчания камеры. Инвариант при этом
- * держала одна строка в UI — стоило его нарушить импортом, миграцией или
- * ошибкой, и пользователь оставался с чистым приложением, не тронув ничего,
- * кроме профилей.
+ * Loading previously used `takeIf { streamProfiles.isNotEmpty() } ?: defaultAppSettings()`,
+ * so an empty profile list discarded the ENTIRE settings file: servers, overlays,
+ * quick-button layout and camera defaults. A single UI line upheld the invariant;
+ * breaking it through import, migration or a bug reset the app even though the
+ * user had touched nothing except profiles.
  */
 /**
- * Приводит задержку SRT к диапазону, который переживёт рукопожатие.
+ * Clamps SRT latency to a range that can survive the handshake.
  *
- * Значение уходит в поле расширения SRT как UInt16 (`SrtSender.writeUInt16`),
- * поэтому всё, что больше 65535, там молча обрезалось бы в мусор — на слух
- * «поставил 100000, а получил 34464». Снизу тоже нужен пол: слишком короткий
- * буфер приёмника не даст восстановить ни одной потери, ради чего SRT и
- * берут.
+ * The value goes into an SRT extension field as UInt16 (`SrtSender.writeUInt16`),
+ * so anything above 65535 would silently truncate to garbage: "I set 100000
+ * but got 34464". A lower bound is also needed: an overly short receiver buffer
+ * cannot recover any lost packets, defeating the reason to use SRT.
  *
- * Границы 100..10000 — рабочий диапазон приёмников экосистемы BELABOX, где
- * типичное значение 2000.
+ * The bounds 100..10000 cover the operating range of BELABOX ecosystem receivers,
+ * where 2000 is typical.
  */
 fun clampSrtLatency(ms: Int): Int = ms.coerceIn(100, 10_000)
 

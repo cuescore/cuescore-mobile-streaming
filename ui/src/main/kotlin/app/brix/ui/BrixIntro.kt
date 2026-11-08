@@ -59,7 +59,7 @@ private class RainColumn(
 
 private const val MAX_RAIN_COLUMNS = 60
 
-/** Самый длинный шаг времени за кадр, секунды: ~два кадра при 30 fps. */
+/** The longest time step per frame, in seconds: ~two frames at 30 fps. */
 private const val MAX_FRAME_STEP = 1f / 15f
 
 @Composable
@@ -76,7 +76,7 @@ fun BrixIntro(onFinished: () -> Unit) {
 
     LaunchedEffect(Unit) {
         if (isDark) {
-            // 1. Счетчик времени кадров
+            // 1. Frame time counter
             launch {
                 var last = withFrameNanos { it }
                 while (true) {

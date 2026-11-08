@@ -95,7 +95,7 @@ sealed interface SettingsRoute {
     data object Audio : SettingsRoute
     data object Appearance : SettingsRoute
     data object Hud : SettingsRoute
-    /** Единый список виджетов сцены — заменил «Оверлеи» и «Браузерные виджеты». */
+    /** Unified scene widget list, replacing "Overlays" and "Browser widgets". */
     data object Widgets : SettingsRoute
     data object Language : SettingsRoute
     data object Advanced : SettingsRoute
@@ -104,7 +104,7 @@ sealed interface SettingsRoute {
     data object DevicePassport : SettingsRoute
     data class StreamProfileEdit(val profileId: String?) : SettingsRoute
     data class ServerProfileEdit(val profileId: String?) : SettingsRoute
-    /** [newKind] задан только при создании: тип выбирается до открытия формы. */
+    /** [newKind] is set only for creation: choose the type before opening the form. */
     data class WidgetEdit(val widgetId: String?, val newKind: WidgetKind? = null) : SettingsRoute
 }
 
@@ -138,12 +138,12 @@ fun CategoryRail(
         }
         add(SettingsCategory.ABOUT to R.string.settings_cat_about)
     }
-    // Консольное меню, а не список карточек: моноширинный текст и тонкая
-    // полоса-индикатор слева от выбранного пункта — тот же терминальный
-    // характер, что уже есть у маскота и вордмарка (design/Brix/assets),
-    // просто до сих пор нигде в самом интерфейсе не звучал. Полоса вместо
-    // заливки всей строки — сдержаннее, ближе к тому, как выбор выглядит на
-    // настоящих панелях управления, а не как подсвеченная ячейка таблицы.
+    // Console menu rather than cards: monospaced text and a thin indicator
+    // to the left of the selected item echo the terminal character already
+    // present in the mascot and wordmark (design/Brix/assets), previously
+    // absent from the actual UI. A stripe rather than a filled row is
+    // restrained, closer to selection on real control panels than to
+    // a highlighted table cell.
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -180,10 +180,10 @@ fun CategoryRail(
                     cat == SettingsCategory.INTEGRATIONS ||
                     cat == SettingsCategory.CONFIG
                 Row(
-                    // IntrinsicSize.Min — иначе внутри прокручиваемого Column
-                    // высота строки для измерения бесконечна, и Box.fillMaxHeight()
-                    // ниже схлопывается в 0: "заполнить максимум" от infinity
-                    // не вычисляется, полоса пропадает целиком.
+                    // IntrinsicSize.Min: otherwise a row inside a scrolling Column
+                    // has infinite measurement height and Box.fillMaxHeight()
+                    // below collapses to 0. Filling an infinite maximum cannot
+                    // be calculated, so the stripe disappears entirely.
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(IntrinsicSize.Min)
@@ -206,9 +206,9 @@ fun CategoryRail(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        // Было 13 — девять строк по такой высоте не помещались
-                        // в альбомный экран и требовали прокрутки ради двух
-                        // последних пунктов.
+                        // Previously 13: nine rows at that height did not fit
+                        // the landscape screen, requiring scrolling to reach
+                        // the last two items.
                         modifier = Modifier.padding(
                             start = if (nested) 25.dp else 11.dp,
                             top = 9.dp,
@@ -235,15 +235,15 @@ fun CategoryHome(
     onRoute: (SettingsRoute) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Значение прямо в строке: до 17.09 его показывали лишь пять строк из
-    // восемнадцати, и чтобы узнать активный сервер или число виджетов, надо
-    // было зайти внутрь (аудит настроек).
+    // Value directly in the row: before 17.09 only five of eighteen rows showed
+    // it. Finding the active server or widget count required opening the
+    // category (settings audit).
     val settings by viewModel.settings.collectAsState()
     when (category) {
-        // Scaffold + SettingsTopBar — тот же каркас, что у остальных восьми
-        // категорий: раньше «Стрим» и «О приложении» были единственными, у
-        // кого заголовок жил внутри LazyColumn (SettingsSectionHeader), а не
-        // в общей шапке — то самое разное место заголовка, на которое жаловались.
+        // Scaffold + SettingsTopBar: same structure as the other eight categories.
+        // Stream and About previously alone put their titles inside LazyColumn
+        // (SettingsSectionHeader), not the common header: the inconsistent title
+        // placement users complained about.
         SettingsCategory.STREAM -> Scaffold(
             modifier = modifier.fillMaxSize(),
             topBar = { SettingsTopBar(stringResource(R.string.settings_stream)) },
@@ -323,13 +323,12 @@ fun CategoryHome(
 }
 
 /**
- * Только вертикальные отступы от Scaffold.
+ * Only vertical Scaffold insets.
  *
- * В альбомной ориентации система добавляет содержимому горизонтальный отступ под
- * вырез экрана (на S21 это 80 px слева). Панель категорий слева его не платит и
- * идёт от края, а содержимое честно отодвигалось — между ними получался провал,
- * который выглядел как ошибка вёрстки. Левый край и так закрыт панелью, поэтому
- * горизонтальную часть отступа гасим.
+ * In landscape, the system adds horizontal content insets for the display cutout
+ * (80 px on the left on S21). The category panel starts at the edge without this
+ * inset, while content was pushed away, leaving a gap that looked like a layout
+ * bug. The panel already covers the left edge, so discard horizontal insets.
  */
 @Composable
 internal fun PaddingValues.verticalOnly(): PaddingValues = PaddingValues(
@@ -338,12 +337,11 @@ internal fun PaddingValues.verticalOnly(): PaddingValues = PaddingValues(
 )
 
 /**
- * Заголовок слева, а не по центру — иначе кнопка назад слева без пары
- * справа сдвигает видимый центр заголовка вправо (ровно то, на что жаловались
- * при первой версии). Место под стрелку зарезервировано фиксированной
- * ширины боксом ВСЕГДА, есть там кнопка или нет — поэтому заголовок стоит
- * в одном и том же месте что на экране категории (без стрелки), что на
- * провалившемся подэкране (со стрелкой): не прыгает при навигации.
+ * Left-aligned title, not centered: otherwise an unpaired back button on the left
+ * shifts the apparent title center rightward, as reported in the first version.
+ * A fixed-width box ALWAYS reserves arrow space, whether the button exists or
+ * not, keeping titles in the same position on category screens (without an arrow)
+ * and nested screens (with an arrow), without jumps during navigation.
  */
 @Composable
 internal fun SettingsTopBar(title: String, onBack: (() -> Unit)? = null) {
@@ -351,10 +349,10 @@ internal fun SettingsTopBar(title: String, onBack: (() -> Unit)? = null) {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Кнопка нужна только там, куда действительно провалились: редакторы
-        // профилей, HUD, быстрые кнопки. На экране категории идти назад некуда —
-        // список категорий и так всегда стоит слева, — и «Назад» там означал
-        // ровно ничего. Остаток от времён, когда панели ещё не было.
+        // Back is needed only on actual nested screens: profile editors, HUD,
+        // quick buttons. Category screens have nowhere to go back to, since
+        // the category list is always on the left; Back there meant nothing.
+        // A leftover from before the panel existed.
         Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
             if (onBack != null) {
                 IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
@@ -376,13 +374,12 @@ internal fun SettingsTopBar(title: String, onBack: (() -> Unit)? = null) {
 }
 
 /**
- * Заголовок с Cancel/Save по бокам — для экранов-редакторов (профиль,
- * сцена, оверлей, виджет). Раньше каждый рисовал это сам через два
- * одинаковых `Spacer(weight=1f)`, что центрирует заголовок только если
- * кнопки СЛЕВА и СПРАВА одной ширины — а «Отмена» и «Сохранить» разной
- * длины, поэтому текст всё равно съезжал. Здесь заголовок сам получает
- * `weight(1f)` и `textAlign = Center` — центрируется в том, что осталось
- * между кнопками, независимо от того, насколько они разной ширины.
+ * Title with Cancel/Save on either side for editor screens (profile,
+ * scene, overlay, widget). Previously each drew two equal `Spacer(weight=1f)`
+ * elements, centering the title only when LEFT and RIGHT buttons had equal
+ * widths. Cancel and Save differ in length, so the text still shifted.
+ * Here the title itself gets `weight(1f)` and `textAlign = Center`, centering
+ * in the space remaining between buttons regardless of their width difference.
  */
 @Composable
 internal fun SettingsEditTopBar(
@@ -410,9 +407,9 @@ internal fun SettingsEditTopBar(
     }
 }
 
-/** "Категория · Экран" в заголовке подэкрана — видно не только куда
- *  попал, но и из какой категории сюда попал (список категорий слева не
- *  подсвечивает текущий подэкран, только категорию). */
+/** "Category · Screen" in nested-screen titles shows both destination and
+ *  originating category (the left list highlights only the category,
+ *  not the current nested screen). */
 @Composable
 internal fun crumb(categoryRes: Int, screenRes: Int): String =
     "${stringResource(categoryRes)} · ${stringResource(screenRes)}"
@@ -526,10 +523,10 @@ fun AudioSettingsScreen(
             modifier = Modifier.padding(inner.verticalOnly()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Раздел делится по смыслу, как у Moblin: сначала УСТРОЙСТВО (откуда
-            // берём звук), потом ПОТОК (в каком виде он уходит в эфир). Раньше всё
-            // лежало вперемешку, и частота дискретизации соседствовала с выбором
-            // капсюля, хотя это про разное.
+            // Organize by meaning, as Moblin does: DEVICE first (audio source),
+            // then STREAM (the format sent to viewers). Previously everything
+            // was mixed together, with sample rate beside capsule selection
+            // despite their different purposes.
             item { AudioGroupTitle(stringResource(R.string.audio_group_stream)) }
             item {
                 BrixCard {
@@ -564,10 +561,10 @@ fun AudioSettingsScreen(
             item { AudioGroupTitle(stringResource(R.string.audio_group_input)) }
             item {
                 BrixCard {
-                    // Показываем ТОЛЬКО подключённое: пункт «Bluetooth» при
-                    // отсутствующей гарнитуре — тот же обман, что тумблер без
-                    // кода за ним. Список считается на каждую перерисовку,
-                    // потому что гарнитуру втыкают посреди эфира.
+                    // Show ONLY connected devices: Bluetooth without a headset
+                    // is as misleading as a toggle with no implementation.
+                    // Recalculate on every redraw because headsets can be
+                    // connected mid-stream.
                     val context = LocalContext.current
                     val mics = MicDevices.available(context)
                     BrixSegmentRow(
@@ -587,11 +584,10 @@ fun AudioSettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
                     )
-                    // Тип сам по себе не различает два устройства: при двух
-                    // Bluetooth-гарнитурах бралась первая попавшаяся. Поэтому
-                    // при выборе типа, у которого устройств больше одного,
-                    // спрашиваем какое именно. Одно устройство — не спрашиваем:
-                    // диалог с единственным пунктом это работа без результата.
+                    // Type alone cannot distinguish devices: with two Bluetooth
+                    // headsets, the first one found was used. When a selected
+                    // type has multiple devices, ask which one. With only one,
+                    // do not ask: a single-item dialog is work without benefit.
                     var pickFor by remember { mutableStateOf<MicSource?>(null) }
                     BrixSegmentRow(
                         title = stringResource(R.string.field_mic_source),
@@ -608,8 +604,8 @@ fun AudioSettingsScreen(
                             )
                         }
                     }
-                    // Имя выбранного устройства — под строкой. Без него человек
-                    // видит «Bluetooth» и не знает, какая из двух гарнитур.
+                    // Selected device name below the row. Without it, users see
+                    // Bluetooth but cannot tell which of two headsets is selected.
                     if (audio.micDeviceName.isNotBlank()) {
                         Text(
                             text = audio.micDeviceName,
@@ -642,10 +638,9 @@ fun AudioSettingsScreen(
                         )
                         Slider(
                             value = audio.micGain,
-                            // Пишем на диск только когда отпустили: каждый шаг
-                            // перетаскивания иначе стоил бы полной сериализации
-                            // файла с fsync — та же ошибка, что была у тумблера
-                            // серверов.
+                            // Write to disk only on release: otherwise each drag
+                            // step would serialize the entire file with fsync,
+                            // repeating the server-toggle mistake.
                             onValueChange = {
                                 viewModel.updateAudio(
                                     audio.copy(micGain = (it * 20).toInt() / 20f),
@@ -728,12 +723,11 @@ fun AppearanceSettingsScreen(
             }
             item {
                 BrixCard {
-                    // HUD переехал сюда из категории «Стрим» 03.09. Он про то,
-                    // что видит стример на своём экране, а не про параметры
-                    // вещания, и рядом с серверами сбивал. У Moblin его аналог
-                    // (Local overlays) тоже лежит в разделе Display. Плюс
-                    // тумблер автоскрытия HUD и так стоит на этом же экране —
-                    // теперь настройка и её содержимое рядом.
+                    // HUD moved here from Stream on 03.09. It concerns what the
+                    // streamer sees, not broadcast parameters; beside servers
+                    // it was confusing. Moblin's equivalent (Local overlays)
+                    // also lives under Display. HUD auto-hide is already on this
+                    // screen, so the setting and its contents are now together.
                     val hud = settings.hud
                     val hudShown = listOf(
                         hud.showBattery, hud.showThermal, hud.showNetworks, hud.showBitrate,
@@ -759,14 +753,14 @@ fun AppearanceSettingsScreen(
 
 /** Display name for a locale tag in that locale's own language. */
 /**
- * Языки, на которые приложение действительно переведено.
+ * Languages the app is actually translated into.
  *
- * `assets.locales` отдаёт не только наши папки values-xx, но и все языки
- * системных ресурсов Android — в мастере первого запуска это вылезло списком
- * из десятков языков при двух переводах (16.09). Поэтому каждый кандидат
- * проверяем: в своей локали строка `locale_tag` должна назвать этот же язык.
- * Если перевода нет, Android отдаст строку из базовой папки, и тег не совпадёт.
- * Переводчику по-прежнему не нужен Kotlin — только `locale_tag` в своём файле.
+ * `assets.locales` includes not only our values-xx directories but all Android
+ * system-resource languages. The first-run wizard consequently listed dozens
+ * of languages despite only two translations (16.09). Verify each candidate:
+ * its localized `locale_tag` must name that same language. Without a translation,
+ * Android returns the base resource and the tag mismatches. Translators still
+ * need no Kotlin, only `locale_tag` in their resource file.
  */
 internal fun supportedAppLanguages(context: android.content.Context): List<String> =
     context.assets.locales
@@ -841,12 +835,11 @@ fun AdvancedSettingsScreen(
     val context = LocalContext.current
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // Без onBack: это и есть экран категории «Расширенные», деться
-        // отсюда некуда, кроме как выбрать другую категорию слева — кнопка
-        // «Назад» вела бы туда же, где уже находимся.
-        // Заголовок совпадает с пунктом меню слева («Расширенные»), а не с
-        // отдельной строкой settings_advanced_screen («SRTLA, запись и
-        // отладка») — та не совпадала ни с чем в интерфейсе и только путала.
+        // No onBack: this is the Advanced category screen; the only destination
+        // is another category on the left. Back would lead to where we already are.
+        // The title matches the left menu item (Advanced), not the separate
+        // settings_advanced_screen string ("SRTLA, recording and debugging"),
+        // which matched nothing else in the UI and only caused confusion.
         topBar = { SettingsTopBar(stringResource(R.string.settings_cat_advanced)) },
     ) { inner ->
         LazyColumn(
@@ -953,8 +946,8 @@ fun StreamProfilesScreen(
         ) {
             BrixCard {
                 settings.streamProfiles.forEachIndexed { index, profile ->
-                    // Звук общий для всех профилей (AppSettings.audio); старое
-                    // поле профиля показывало то, чего стример уже не читает.
+                    // Audio is shared across profiles (AppSettings.audio); the
+                    // old profile field showed values the streamer no longer reads.
                     val a = settings.audio
                     val audioMode = stringResource(
                         if (a.stereo) R.string.audio_stereo else R.string.audio_mono,
@@ -1180,9 +1173,9 @@ fun DiagnosticsScreen(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            // Журнал сессии переехал сюда из «Расширенных» (владелец, 17.09): там он
-            // стоял рядом с «Записывать стрим», и перед замером обновления галки
-            // перепутались — эфир прошёл с записью MP4 и без журнала, замер пропал.
+            // Session log moved here from Advanced (the owner, 17.09). Beside
+            // Record stream, the checkboxes were confused before an update
+            // measurement: MP4 was recorded without a log, losing the measurement.
             BrixCard {
                 BrixToggleRow(
                     stringResource(R.string.advanced_debug_log),
@@ -1199,8 +1192,8 @@ fun DiagnosticsScreen(
                     },
                     divider = false,
                     onClick = {
-                        // Чтение каталога журналов — не на главном потоке, как
-                        // и экспорт диагностики ниже (H10, аудит 23.09).
+                        // Read the log directory off the main thread, as with
+                        // diagnostics export below (H10, audit 23.09).
                         scope.launch(Dispatchers.IO) {
                             val uri = Diagnostics.exportLatestSessionLog(context) ?: return@launch
                             withContext(Dispatchers.Main) {
@@ -1285,8 +1278,8 @@ fun MoblinkSettingsScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // Без onBack — экран категории «Moblink», уходить некуда, кроме
-        // другой категории слева.
+        // No onBack: Moblink category screen; only another category on
+        // the left is a destination.
         topBar = { SettingsTopBar(stringResource(R.string.settings_cat_moblink)) },
     ) { innerPadding ->
         LazyColumn(
@@ -1409,16 +1402,16 @@ fun ChatSettingsScreen(
     var vkClientIdText by rememberSaveable(chat.vkClientId) { mutableStateOf(chat.vkClientId) }
     var vkClientSecretText by rememberSaveable(chat.vkClientSecret) { mutableStateOf(chat.vkClientSecret) }
 
-    // Тот же приём, что у Moblink: правки идут в память на каждое нажатие
-    // клавиши (commit = false), на диск — по потере фокуса или уходу с экрана.
+    // Same approach as Moblink: each keystroke updates memory (commit = false),
+    // while focus loss or leaving the screen writes to disk.
     DisposableEffect(Unit) {
         onDispose { viewModel.flush() }
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // Без onBack — экран категории «Чат», уходить некуда, кроме
-        // другой категории слева.
+        // No onBack: Chat category screen; only another category on
+        // the left is a destination.
         topBar = { SettingsTopBar(stringResource(R.string.settings_cat_chat)) },
     ) { innerPadding ->
         LazyColumn(
@@ -1497,9 +1490,9 @@ fun ChatSettingsScreen(
                 }
             }
 
-            // Эмодзи самих Twitch и Kick показываются всегда — они приходят в
-            // сообщении. 7TV и BTTV — отдельные сервисы, к ним ходим только
-            // по согласию: по запросам видно, какой канал открыт.
+            // Twitch and Kick's own emotes always appear: they arrive with the
+            // message. 7TV and BTTV are separate services, contacted only with
+            // consent because requests reveal the channel being viewed.
             item { SettingsSectionHeader(stringResource(R.string.chat_emotes_section)) }
             item {
                 BrixCard {
@@ -1591,8 +1584,8 @@ fun ConfigTransferScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // Без onBack — экран категории «Импорт/экспорт», уходить некуда,
-        // кроме другой категории слева.
+        // No onBack: Import/export category screen; only another category
+        // on the left is a destination.
         topBar = { SettingsTopBar(stringResource(R.string.settings_config_title)) },
     ) { innerPadding ->
         Column(
@@ -1618,8 +1611,8 @@ fun ConfigTransferScreen(
                 Text(stringResource(R.string.settings_share_config))
             }
             if (askIncludeSecrets) {
-                // Спрашиваем ДО отправки, а не после: ссылку уже не отозвать из
-                // чужой переписки и истории браузера.
+                // Ask BEFORE sending, not after: a link cannot be recalled from
+                // someone else's messages or browser history.
                 val share = { withSecrets: Boolean ->
                     askIncludeSecrets = false
                     val link = app.brix.core.SettingsDeepLink.encode(settings, includeSecrets = withSecrets)
@@ -1846,12 +1839,12 @@ internal fun ProfileRow(
 }
 
 /**
- * Единый список виджетов сцены.
+ * Unified scene widget list.
  *
- * Раньше здесь было два экрана — «Оверлеи» и «Браузерные виджеты», — и разница
- * между ними была нашей внутренней, а не смысловой для человека: один
- * браузерный виджет доната клался в первый список, другой во второй (владелец,
- * 14.09). Теперь список один, а вид вещи задаётся типом при создании.
+ * Previously two screens, Overlays and Browser widgets, reflected an internal
+ * distinction rather than meaning for users: one browser-based donation widget
+ * went in the first list, another in the second (the owner, 14.09).
+ * Now there is one list, with the item type selected at creation.
  */
 @Composable
 fun WidgetsSettingsScreen(
@@ -1913,10 +1906,10 @@ fun WidgetsSettingsScreen(
         }
     }
     if (pickKind) {
-        // Телефон в эфире держат горизонтально, и высоты почти нет: четыре типа
-        // с пояснениями не помещались — «Текст» не было видно вовсе, а описание
-        // «Картинки» обрезалось на полуслове (владелец, 15.09). Отсюда и
-        // прокрутка, и компактный диалог вместо материального.
+        // Streaming phones are held horizontally with little vertical space:
+        // four types with explanations did not fit. Text was invisible and
+        // Image's description was cut mid-word (the owner, 15.09).
+        // Hence scrolling and a compact dialog instead of a Material one.
         BrixDialog(
             title = stringResource(R.string.widget_pick_kind),
             onDismiss = { pickKind = false },
@@ -1949,8 +1942,8 @@ fun WidgetsSettingsScreen(
         }
     }
     if (pendingDelete != null) {
-        // Раньше диалог спрашивал «Удалить виджет?» и не говорил, какой именно,
-        // а обе кнопки выглядели одинаково (владелец, 15.09).
+        // Previously the dialog asked "Delete widget?" without identifying which,
+        // and both buttons looked identical (the owner, 15.09).
         val doomed = settings.widgets.firstOrNull { it.id == pendingDelete }
         BrixDialog(
             title = stringResource(R.string.dialog_delete_widget_title),
@@ -1995,9 +1988,9 @@ private fun widgetKindHint(kind: WidgetKind): Int = when (kind) {
 @Composable
 private fun WidgetRow(
     widget: SceneWidget,
-    /** Входит ли виджет хотя бы в одну сцену. Если нет — он не работает вовсе,
-     *  и об этом надо сказать вслух: включённый виджет вне сцен молча ничего не
-     *  делает, а человек считает, что настроил (владелец, 14.09). */
+    /** Whether the widget belongs to at least one scene. Otherwise it does nothing,
+         *  which must be stated explicitly: an enabled widget outside all scenes
+         *  silently does nothing while users think it is configured (the owner, 14.09). */
     inAnyScene: Boolean,
     onToggle: (Boolean) -> Unit,
     onEdit: () -> Unit,
@@ -2024,8 +2017,8 @@ private fun WidgetRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            // Тип в подписи, а не значком: значок пришлось бы объяснять, а
-            // строка «Донат-алерт · включён» читается без легенды.
+            // Type as text, not an icon: an icon would need explanation, whereas
+            // "Donation alert · enabled" reads without a legend.
             Text(
                 text = stringResource(widgetKindLabel(widget.kind)) + " · " + when {
                     !widget.enabled -> stringResource(R.string.settings_disabled)
@@ -2057,7 +2050,7 @@ private fun WidgetRow(
     }
 }
 
-/** Форма одного виджета. Поля показываются по типу — общего у всех только имя. */
+/** Single-widget form. Fields depend on type; only the name is common to all. */
 @Composable
 fun WidgetEditScreen(
     viewModel: SettingsViewModel,
@@ -2087,8 +2080,8 @@ fun WidgetEditScreen(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) {
-            // Разрешение переживает перезагрузку: без него URI читается только
-            // до конца процесса, и картинка пропадает из кадра после перезапуска.
+            // Permission survives reboot: without it the URI is readable only
+            // until the process ends, and the image disappears after restart.
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
@@ -2108,9 +2101,9 @@ fun WidgetEditScreen(
         audioInStream = audioInStream,
         captionScale = captionScale,
         captionVisible = captionVisible,
-        // Нижняя граница нужна, чтобы нельзя было случайно попросить снимок
-        // WebView каждые пару миллисекунд: это покадровая работа в GL-тракте,
-        // а не бесплатное число в настройке.
+        // A lower bound prevents accidentally requesting WebView snapshots
+        // every few milliseconds: this is per-frame GL pipeline work,
+        // not a cost-free number in settings.
         refreshMs = refresh.toLongOrNull()?.coerceIn(50L, 5_000L) ?: base.refreshMs,
         imageUri = imageUri,
         template = template,
@@ -2149,11 +2142,11 @@ fun WidgetEditScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Заголовка с типом внутри карточки нет намеренно: тип уже написан
-            // в шапке экрана, и вторая такая же надпись читалась как вопрос
-            // «а это про что?» (владелец, 15.09). BrixCard задаёт только
-            // боковые поля, поэтому вертикальные добавляем здесь — иначе
-            // подсказка внизу упирается в самый край скругления.
+            // Deliberately no type heading inside the card: the screen header
+            // already names it, and repetition prompted "what is this about?"
+            // (the owner, 15.09). BrixCard sets only horizontal padding,
+            // so add vertical padding here to keep the bottom hint from
+            // touching the rounded edge.
             BrixCard {
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -2184,8 +2177,8 @@ fun WidgetEditScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        // Сервис узнаётся по домену — человеку сразу видно, что
-                        // ссылку вставили ту и какую метку он увидит в HUD.
+                        // Identify the service by domain: users immediately see
+                        // whether the URL is correct and which HUD marker to expect.
                         if (kind == WidgetKind.DONATION_ALERT && url.isNotBlank()) {
                             val service = app.brix.core.DonationService.forUrl(url)
                             Spacer(Modifier.height(4.dp))
@@ -2287,8 +2280,8 @@ fun WidgetEditScreen(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                // Подпись — имя, сумма, сообщение. Раньше её размер выводился из
-                // ширины картинки, и менять текст приходилось размером окна наугад.
+                // Caption: name, amount, message. Previously its size derived from
+                // image width, requiring random window resizing to change text size.
                 BrixCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(
@@ -2297,9 +2290,9 @@ fun WidgetEditScreen(
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Spacer(Modifier.height(4.dp))
-                        // Выбора «сверху или снизу» нет намеренно: порядок в
-                        // донат-алерте устоявшийся, и ручка, которая его ломает, —
-                        // не гибкость. Только «показывать или нет».
+                        // Deliberately no "above or below" option: donation alerts
+                        // have an established order, and breaking it is not
+                        // flexibility. Only "show or hide".
                         BrixToggleRow(
                             title = stringResource(R.string.overlay_caption_show),
                             subtitle = stringResource(R.string.overlay_caption_show_hint),
@@ -2344,11 +2337,11 @@ private fun micSourceLabel(source: MicSource): String = stringResource(
 )
 
 /**
- * Какое именно устройство выбранного типа.
+ * The specific device of the selected type.
  *
- * Показывается только когда устройств этого типа больше одного — две
- * Bluetooth-гарнитуры, два USB-входа. Имя берётся из `productName`, потому что
- * `address` у Bluetooth это MAC: его нельзя ни показывать, ни хранить.
+ * Shown only when multiple devices share this type: two Bluetooth headsets,
+ * two USB inputs. Use `productName` because Bluetooth `address` is a MAC
+ * address, which must not be displayed or stored.
  */
 @Composable
 private fun MicDevicePickerDialog(
@@ -2378,7 +2371,7 @@ private fun MicDevicePickerDialog(
     )
 }
 
-/** Заголовок смысловой группы внутри экрана настроек звука. */
+/** Semantic group heading within the audio settings screen. */
 @Composable
 private fun AudioGroupTitle(text: String) {
     Text(

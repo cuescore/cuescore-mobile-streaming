@@ -5,11 +5,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Требуется для ConnectivityManager.requestNetwork(): бондинг просит у
-         системы конкретный канал (соту отдельно от Wi-Fi), чтобы держать их
-         одновременно. Без этого разрешения объединение каналов не работает.
-         registerNetworkCallback() обошёлся бы одним ACCESS_NETWORK_STATE, но
-         он только наблюдает и не поднимает канал. -->
+    <!-- Required for ConnectivityManager.requestNetwork(): bonding asks the
+         system for a specific link (cellular separately from Wi-Fi) to keep
+         both active simultaneously. Without this permission bonding cannot work.
+         registerNetworkCallback() would need only ACCESS_NETWORK_STATE, but
+         it merely observes and does not bring up a link. -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />

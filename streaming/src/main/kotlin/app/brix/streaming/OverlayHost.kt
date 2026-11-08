@@ -19,34 +19,33 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Всё, что относится к оверлеям в кадре: донат-алерты, живые оверлеи
- * (снимок браузерного виджета), примешивание донат-звука в эфир и признак
- * «виджет на связи» для HUD.
+ * Everything concerning overlays in the frame: donation alerts, live overlays
+ * (browser widget snapshots), donation audio mixing into the stream and
+ * widget connectivity for the HUD.
  *
- * Выделено из [SrtlaStreamer], который держал шесть несвязанных обязанностей
- * сразу и вырос до полутора тысяч строк. Наружу ничего не поменялось:
- * [LiveStreamer] остался тем же интерфейсом, стример просто делегирует сюда.
+ * Extracted from [SrtlaStreamer], which held six unrelated responsibilities
+ * and grew to fifteen hundred lines. Nothing changed externally:
+ * [LiveStreamer] remains the same interface; the streamer delegates here.
  *
- * Зависимости узкие и все передаются снаружи: медиа-тракт [stream] (фильтровая
- * цепочка GL и смена источника звука), общая корутинная область [scope],
- * [updateState] для полей StreamState, которые видит HUD, и [isReleased] —
- * владелец может быть уже разрушен, пока сюда летит запоздавший вызов.
+ * Dependencies are narrow and injected: media pipeline [stream] (GL filter
+ * chain and audio-source replacement), shared coroutine [scope], [updateState]
+ * for HUD-visible StreamState fields and [isReleased], since the owner may
+ * already be destroyed when a delayed call arrives.
  */
 internal class OverlayHost(
-    // StreamBase, а не конкретный транспорт: RtmpStream, WhipStream и
-    // SrtlaStream наследуют его все три, и нужное оверлеям (GL-цепочка и смена
-    // источника звука) объявлено там. До 03.09 хост знал только SRTLA, поэтому
-    // донатные оверлеи в RTMP и WHIP были восемью пустыми заглушками.
+    // StreamBase, not a specific transport: RtmpStream, WhipStream and
+    // SrtlaStream all inherit it, and it declares the GL chain and audio-source
+    // replacement needed by overlays. Before 03.09 the host knew only SRTLA,
+    // leaving eight empty donation-overlay stubs in RTMP and WHIP.
     private val stream: StreamBase,
-    /** Залатченный мьют микрофона: после каждой смены источника звука его надо
-     *  подтвердить заново, иначе включённый оверлей-миксер снимает мьют. */
+    /** Latched microphone mute: reapply after every audio-source change,
+     *  otherwise enabling the overlay mixer unmutes the microphone. */
     private val micMuted: () -> Boolean,
-    /** Усиление микрофона из профиля: при смене источника звука его надо
-     *  подтверждать так же, как мьют, иначе включение звука донатов молча
-     *  сбрасывало бы уровень на единицу. */
+    /** Profile microphone gain: reapply after audio-source changes, like mute,
+     *  otherwise enabling donation audio silently resets the level to one. */
     private val micGain: () -> Float,
-    /** Общий измеритель уровня: миксер донат-звука должен кормить тот же
-     *  индикатор в HUD, что и обычный микрофон. */
+    /** Shared level meter: the donation mixer must feed the same HUD
+     *  indicator as the normal microphone. */
     private val micMeter: MicLevelMeter,
     private val scope: CoroutineScope,
     private val isReleased: () -> Boolean,
@@ -54,7 +53,7 @@ internal class OverlayHost(
 ) {
     private val tag = "BrixStream"
 
-    /** Подтвердить мьют И усиление на текущем источнике звука. */
+    /** Reapply BOTH mute and gain to the current audio source. */
     private fun applyMicMute() {
         when (val source = stream.audioSource) {
             is OverlayAudioSource -> {
@@ -73,26 +72,26 @@ internal class OverlayHost(
         }
     }
 
-    // На каждый id оверлея свой рендерер и своя анимационная задача, чтобы
-    // алерт одного оверлея никогда не отменял и не затирал другой: GlInterface
-    // у RootEncoder — настоящая цепочка фильтров (addFilter/removeFilter), так
-    // что несколько ImageFilterRender живут одновременно.
+    // Each overlay ID has its own renderer and animation job so one alert
+    // never cancels or overwrites another. RootEncoder's GlInterface is a
+    // genuine filter chain (addFilter/removeFilter), allowing multiple
+    // ImageFilterRender instances simultaneously.
     private val renderers = ConcurrentHashMap<String, NativeOverlayRenderer>()
     private val jobs = ConcurrentHashMap<String, Job>()
 
     private var mixer: OverlayAudioSource? = null
 
-    // Оверлеи, чей донат-звук сейчас подмешивается в эфир, по id оверлея.
-    // Их может быть несколько разом (OverlayAudioSource их складывает),
-    // поэтому это карта, а не один обнуляемый проигрыватель.
+    // Overlays whose donation audio is currently mixed into the stream, by ID.
+    // Several can play at once (OverlayAudioSource sums them), so use a map,
+    // not a single replaceable player.
     private val mixPlayers = ConcurrentHashMap<String, DonationAudioPlayer>()
 
-    // Признак «виджет на связи» на каждый оверлей (только донат-виджеты),
-    // сворачивается в StreamState.donationWidgetConnected по «хоть один».
+    // Connectivity per overlay (donation widgets only), reduced to
+    // StreamState.donationWidgetConnected using "at least one".
     private val connectionStates = ConcurrentHashMap<String, Boolean>()
 
-    /** overlayId → сервис (см. [app.brix.core.DonationService]): по нему HUD
-     *  показывает метку каждого сервиса отдельно, а не одну общую точку. */
+    /** overlayId -> service (see [app.brix.core.DonationService]): lets the HUD
+     *  show each service's marker separately instead of one shared dot. */
     private val overlayServices = ConcurrentHashMap<String, String>()
 
     fun setAudioInStream(overlayId: String, enabled: Boolean, donationPlayer: DonationAudioPlayer?) {
@@ -109,10 +108,9 @@ internal class OverlayHost(
                     newMixer.startMixing()
                     stream.changeAudioSource(newMixer)
                     mixer = newMixer
-                    // Новый источник поднимается незаглушённым — надо заново
-                    // применить залипший мьют, иначе включение донат-звука
-                    // молча открывает микрофон, который стример считает
-                    // выключенным.
+                    // New sources start unmuted: reapply latched mute,
+                    // otherwise enabling donation audio silently opens
+                    // a microphone the streamer believes is disabled.
                     applyMicMute()
                 } else if (mixPlayers.isEmpty() && mixer != null) {
                     mixer = null
@@ -144,8 +142,8 @@ internal class OverlayHost(
             try {
                 val start = SystemClock.elapsedRealtime()
                 var idx = 0
-                // Короткое появление, потом кадры на запрошенное время, потом
-                // затухание: донат-алерт не должен возникать и пропадать рывком.
+                // Brief fade-in, frames for the requested duration, then fade-out:
+                // donation alerts should not appear and disappear abruptly.
                 renderer.setAlpha(0f)
                 while (SystemClock.elapsedRealtime() - start < durationMs) {
                     val frame = frames[idx % frames.size]
@@ -156,10 +154,10 @@ internal class OverlayHost(
                     idx++
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // Штатно: hide() отменяет эту задачу, когда время показа вышло
-                // или алерт сменился другим. Это не сбой, и по правилам
-                // структурной конкурентности исключение надо пробросить, а не
-                // проглотить как ошибку.
+                // Expected: hide() cancels this job when display time expires
+                // or another alert replaces it. Not a failure; structured
+                // concurrency requires rethrowing the exception, not
+                // swallowing it as an error.
                 throw e
             } catch (e: Exception) {
                 Log.e(tag, "showOverlay animation failed (overlayId=$overlayId)", e)
@@ -177,10 +175,10 @@ internal class OverlayHost(
         jobs.remove(overlayId)?.cancel()
         val renderer = renderers[overlayId]
         scope.launch {
-            // Снимаем фильтр, только если за это время не начался новый показ
-            // того же оверлея. show() берёт тот же рендерер, его attach() —
-            // пустая операция (фильтр ещё стоит), и запоздавший detach молча
-            // гасил только что показанный алерт (аудит 23.09).
+            // Remove the filter only if this overlay has not started showing
+            // again meanwhile. show() reuses the renderer; attach() is a no-op
+            // while the filter remains attached, so a delayed detach silently
+            // hid the newly displayed alert (audit 23.09).
             if (!jobs.containsKey(overlayId)) renderer?.detach(stream.getGlInterface())
         }
         updateState { it.copy(overlayVisible = jobs.isNotEmpty()) }
@@ -196,7 +194,7 @@ internal class OverlayHost(
         publishConnections()
     }
 
-    /** Оверлей убран с экрана — забыть его совсем. */
+    /** Overlay removed from the screen: forget it completely. */
     fun forgetConnection(overlayId: String) {
         if (isReleased()) return
         connectionStates.remove(overlayId)
@@ -216,10 +214,10 @@ internal class OverlayHost(
         }
     }
 
-    // Живые оверлеи (например снимок браузерного виджета) делят ту же карту
-    // рендереров, что и донат-алерты — id разные, конфликта нет, — но целиком
-    // минуют анимационную задачу: прицепились один раз на полной непрозрачности
-    // и просто получают новые кадры до отцепления.
+    // Live overlays (e.g. browser widget snapshots) share the renderer map with
+    // donation alerts; distinct IDs prevent conflicts. They bypass animation
+    // jobs entirely: attach once at full opacity and receive new frames
+    // until detached.
     fun attachLive(overlayId: String, posX: Float, posY: Float, size: OverlaySize) {
         if (isReleased()) return
         val renderer = renderers.getOrPut(overlayId) { NativeOverlayRenderer() }
@@ -241,8 +239,8 @@ internal class OverlayHost(
         }
     }
 
-    /** Снять всё: анимации, рендереры из цепочки фильтров, признаки связи.
-     *  Зовётся из [SrtlaStreamer.release] до того, как отпускается сам поток. */
+    /** Remove everything: animations, renderers from the filter chain, connectivity.
+     *  Called by [SrtlaStreamer.release] before releasing the stream itself. */
     fun release() {
         jobs.values.forEach { it.cancel() }
         jobs.clear()

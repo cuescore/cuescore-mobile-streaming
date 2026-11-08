@@ -18,8 +18,8 @@ class ServerProfileUrlTest {
 
     @Test
     fun `лишние слэши не задваиваются`() {
-        // Адрес с площадки часто копируют вместе с хвостовым слэшем, а ключ —
-        // с ведущим. Склейка не должна давать "app//live_123".
+        // The address is often copied from the platform with a trailing slash, and the key
+        // with a leading one. Joining them must not produce "app//live_123".
         assertEquals(
             "rtmp://host/app/live_123",
             rtmp("rtmp://host/app/", "/live_123").connectUrl(),
@@ -28,14 +28,14 @@ class ServerProfileUrlTest {
 
     @Test
     fun `пробелы вокруг ключа срезаются`() {
-        // Ключ почти всегда попадает в поле вставкой из буфера, вместе с
-        // переводом строки или пробелом.
+        // The key is almost always pasted into the field from the clipboard, along with a
+        // line break or whitespace.
         assertEquals("rtmp://host/app/live_123", rtmp("rtmp://host/app", "  live_123\n").connectUrl())
     }
 
     @Test
     fun `без ключа адрес не меняется`() {
-        // Профили, заведённые до появления поля, держат ключ прямо в адресе.
+        // Profiles created before the field was added keep the key directly in the address.
         val old = rtmp("rtmp://host/app/live_OLDKEY")
         assertEquals("rtmp://host/app/live_OLDKEY", old.connectUrl())
     }
@@ -53,8 +53,8 @@ class ServerProfileUrlTest {
 
     @Test
     fun `прежний streamid в адресе отбрасывается, а не задваивается`() {
-        // Иначе при заполнении поля получилось бы два streamid подряд, и
-        // приёмник отверг бы подключение.
+        // Otherwise, filling in the field would result in two streamid values in a row, and
+        // the receiver would reject the connection.
         assertEquals(
             "srtla://host:5000?streamid=новый",
             srtla("srtla://host:5000?streamid=старый", "новый").connectUrl(),
@@ -63,7 +63,7 @@ class ServerProfileUrlTest {
 
     @Test
     fun `у SRTLA без заполненного поля адрес не меняется`() {
-        // Профили, заведённые до появления поля, держат streamid прямо в адресе.
+        // Profiles created before the field was added keep streamid directly in the address.
         val old = srtla("srtla://host:5000?streamid=live/stream/x?srtauth=KEY")
         assertEquals("srtla://host:5000?streamid=live/stream/x?srtauth=KEY", old.connectUrl())
     }

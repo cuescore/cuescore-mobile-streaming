@@ -3,7 +3,7 @@ package app.brix.core
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Импорт серверов по ссылке: после него активен ровно один. */
+/** Import servers from a link: exactly one remains active afterward. */
 class ImportServersTest {
 
     private fun server(id: String, enabled: Boolean) =

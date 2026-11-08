@@ -38,9 +38,9 @@ class SettingsStore(
                 return fromBak
             }
         }
-        // Файла нет вовсе — это первая установка. Пароль Moblink генерируем здесь,
-        // а не оставляем значением по умолчанию: служба поднимается в локальной
-        // сети, и одинаковый пароль у всех владельцев приложения — не пароль.
+        // No file at all means this is a first install. Generate the Moblink
+        // password here rather than leaving the default: the service runs on the
+        // local network, and one shared password for all app owners is no password.
         return primary ?: Result.success(
             AppSettings(
                 moblink = MoblinkSettings(password = generateMoblinkPassword()),

@@ -7,20 +7,20 @@ import kotlin.math.log10
 import kotlin.math.max
 
 /**
- * Уровень МИКРОФОНА по каналам — для индикатора на экране стримера.
+ * MICROPHONE level per channel—for the indicator on the streamer's screen.
  *
- * Считается на кадре PCM микрофона с уже применённым усилением и мьютом, но ДО
- * подмешивания донатов (владелец, 17.09: на индикаторе нужен голос, а не сумма
- * всего, что уходит в эфир, — иначе алерт выглядит как крик в микрофон).
+ * Calculated from a microphone PCM frame with gain and mute already applied, but BEFORE
+ * mixing in donations (the owner, 17.09: the indicator should show the voice, not the sum
+ * of everything sent to the live stream—otherwise an alert looks like shouting into the mic).
  *
- * **Почему пик, а не среднее.** Стримеру нужны два ответа: «звук вообще идёт»
- * и «не перегружен ли вход». Оба видны по пику; среднеквадратичное значение
- * ровнее, но клиппинг на нём не заметен.
+ * **Why peak, not average.** The streamer needs two answers: “is there any audio at all”
+ * and “is the input overloaded?” Both are visible in the peak; the RMS value
+ * is smoother, but clipping is not visible in it.
  *
- * Значение в долях 0..1 по шкале децибел (-60 дБ и тише — ноль), потому что
- * линейная шкала для голоса почти всё время висит в нижней десятой части.
- * Спад добавлен искусственно: без него полоска мигает на каждой паузе между
- * словами и читается как сбой.
+ * Value is a fraction from 0..1 on a decibel scale (-60 dB and below is zero), because
+ * for voice, a linear scale stays in the bottom tenth almost all the time.
+ * Decay is added artificially: without it, the bar flashes at every pause between
+ * words and looks like a malfunction.
  */
 class MicLevelMeter(
     private val decayPerFrame: Float = 0.25f,
@@ -29,7 +29,7 @@ class MicLevelMeter(
 
     private val _left = MutableStateFlow(0f)
 
-    /** Левый канал (в моно — единственный). */
+    /** Left channel (the only channel in mono). */
     val left: StateFlow<Float> = _left
 
     private val _right = MutableStateFlow(0f)
@@ -44,9 +44,9 @@ class MicLevelMeter(
     fun submit(pcm16: ByteArray, offset: Int = 0, size: Int = pcm16.size - offset) {
         var peakL = 0
         var peakR = 0
-        // Прореживание: кадр — тысячи отсчётов, пик от этого почти не меняется,
-        // а считается это в потоке записи звука, где лишние такты не нужны.
-        // Шаг кратен кадру стерео (4 байта), иначе каналы перепутаются местами.
+        // Downsampling: a frame contains thousands of samples, and the peak barely changes,
+        // while this is calculated in the audio recording stream, where extra cycles are undesirable.
+        // The step is a multiple of a stereo frame (4 bytes), otherwise the channels will be swapped.
         val step = if (stereo) 16 else 8
         val end = offset + size
         var i = offset
@@ -58,24 +58,24 @@ class MicLevelMeter(
             }
             i += step
         }
-        // Внутри — на каждом кадре (спад считается по кадрам), наружу — не чаще
-        // PUBLISH_MS. Раньше каждое значение кадра уходило в StateFlow, и HUD
-        // перерисовывался ~13 раз/с, пока в комнате есть звук (стенд 04.10).
-        // Наружу идёт максимум за окно, а не последний кадр: иначе пик слова,
-        // пришедшийся между публикациями, на экран не попадал бы вовсе.
+        // Internally, every frame (decay is calculated per frame); externally, no more often than
+        // PUBLISH_MS. Previously every frame value went into StateFlow and the HUD
+        // re-rendered ~13 times/s while there was sound in the room (04.10 test setup).
+        // The maximum over the window is published, not the last frame: otherwise, a word's peak
+        // occurring between publications would never reach the screen.
         levelL = max(scale(peakL), levelL - decayPerFrame)
         levelR = if (stereo) max(scale(peakR), levelR - decayPerFrame) else levelL
         windowL = max(windowL, levelL)
         windowR = max(windowR, levelR)
 
         val now = nowMs()
-        // Защёлка перегрузки по времени: раньше флаг горел ровно один кадр
-        // (~20 мс) и почти всегда проскакивал между кадрами экрана.
+        // Time-based overload latch: previously, the flag stayed on for exactly one frame
+        // (~20 ms) and almost always slipped between screen frames.
         val clipNow = max(peakL, peakR) >= CLIP_SAMPLE
         if (clipNow) clipUntil = now + CLIP_HOLD_MS
         val clipped = now < clipUntil
 
-        // Начало перегрузки публикуется сразу, не дожидаясь окна.
+        // The start of an overload is published immediately, without waiting for the window.
         if (now - lastPublish >= PUBLISH_MS || (clipped && !_clipping.value)) {
             _left.value = windowL
             _right.value = windowR
@@ -112,8 +112,8 @@ class MicLevelMeter(
         private const val CLIP_HOLD_MS = 1_500L
         private const val CLIP_SAMPLE = 32_000
 
-        /** Децибелы, а не линейная шкала: на линейной голос почти всё время висит
-         *  в нижней десятой части полоски. −60 дБ и тише — ноль. */
+        /** Decibels, not a linear scale: on a linear scale, voice stays
+         *  in the bottom tenth of the bar almost all the time. −60 dB and below is zero. */
         internal fun scale(peak: Int): Float {
             val normalized = peak / 32768f
             val db = if (normalized <= 0.0001f) -60f else 20f * log10(normalized)

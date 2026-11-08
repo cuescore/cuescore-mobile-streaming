@@ -4,11 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Перевод весов каналов из 0…100 в ранг 1…10 (14.09).
+ * Convert link weights from 0..100 to ranks 1..10 (14.09).
  *
- * Трогает сохранённые настройки живых пользователей, поэтому проверяется здесь,
- * а не «на глаз»: ошибка тут молча меняет распределение трафика по каналам или
- * вовсе выключает канал.
+ * Modifies existing users' saved settings, so test rather than guess:
+ * a bug silently changes traffic distribution or disables a link entirely.
  */
 class ChannelWeightMigrationTest {
 
@@ -34,7 +33,7 @@ class ChannelWeightMigrationTest {
 
     @Test
     fun `мелкие старые значения не схлопываются в ноль`() {
-        // 1…9 при делении нацело дали бы 0, то есть канал выключился бы молча.
+        // Integer division of 1..9 would give 0, silently disabling the link.
         val out = weightsOf(withWeights(11, 15).migrate())
         assertEquals(listOf(2, 2), out)
     }

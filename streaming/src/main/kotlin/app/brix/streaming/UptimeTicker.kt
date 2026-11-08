@@ -8,22 +8,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Раз в секунду двигает [LiveStreamer.uptimeTick].
+ * Updates [LiveStreamer.uptimeTick] once per second.
  *
- * Счётчик времени эфира в UI считается как разница этой отметки и
- * `connectedAtElapsedMs` — собственного цикла у него нет специально, чтобы не
- * будить процессор вторым таймером с тем же периодом. В SRTLA-пути отметку
- * двигает [StatsReporter] попутно с телеметрией линков; у RTMP и WHIP линков
- * нет, телеметрии тоже, и до 03.09 отметку не двигал никто — поэтому таймер
- * эфира стоял на 0:00.
+ * The live-stream timer in the UI is calculated as the difference between this
+ * timestamp and `connectedAtElapsedMs`. It deliberately has no loop of its own,
+ * to avoid waking the processor with a second timer at the same interval. In the
+ * SRTLA path, [StatsReporter] updates the timestamp along with link telemetry;
+ * RTMP and WHIP have no links or telemetry, and until Sep 3 nobody updated it—so
+ * the live-stream timer stayed at 0:00.
  */
 internal class UptimeTicker(
     private val scope: CoroutineScope,
     private val publishTick: (Long) -> Unit,
-    /** Попутная работа того же такта. Отдельный цикл под адаптивный битрейт
-     *  здесь не заводится сознательно: два таймера с одним периодом будили бы
-     *  процессор дважды в секунду ради одной работы (то же соображение, что в
-     *  комментарии к `statsTickElapsedMs`). */
+    /** Work performed alongside the same tick. We deliberately don't create a
+     *  separate loop for adaptive bitrate: two timers with the same interval would
+     *  wake the processor twice per second for one task (same reasoning as in the
+     *  comment for `statsTickElapsedMs`). */
     private val onTick: () -> Unit = {},
 ) {
     private var job: Job? = null

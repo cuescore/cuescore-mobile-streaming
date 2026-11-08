@@ -30,7 +30,7 @@ data class StreamState(
     val adaptiveBitrateEnabled: Boolean = false,
     val adaptiveBitrateKbps: Long = 0,
     val micMuted: Boolean = false,
-    /** Текущий предпочитаемый микрофон — для подписи и индикации кнопки. */
+    /** Currently preferred microphone—for the label and button indicator. */
     val micSource: MicSource = MicSource.AUTO,
     val torchOn: Boolean = false,
     val blackScreenOn: Boolean = false,
@@ -40,8 +40,8 @@ data class StreamState(
      *  to its alert server (per its own WS console logging) — null when no
      *  donation overlay is configured/no signal has arrived yet. */
     val donationWidgetConnected: Boolean? = null,
-    /** Состояние каждого донат-сервиса: id из [app.brix.core.DonationService] →
-     *  подключён ли хоть один его виджет. Пусто, когда донат-виджетов нет. */
+    /** State of each donation service: the ID from [app.brix.core.DonationService] →
+     *  whether at least one of its widgets is connected. Empty when there are no donation widgets. */
     val donationServices: Map<String, Boolean> = emptyMap(),
     val phase: SessionPhase? = null,
     val error: StreamError? = null,
@@ -50,15 +50,15 @@ data class StreamState(
 )
 
 /**
- * Состояние после остановки эфира — одно на все три транспорта.
+ * State after the live stream stops—shared by all three transports.
  *
- * **Зачем отдельная функция.** Сброс был написан трижды, по разу в каждом стримере,
- * и разъехался: RTMP и WHIP чистили список каналов, SRTLA нет — и после Stop HUD
- * показывал застывшие битрейты по Wi-Fi и соте, как будто эфир идёт (14.09). Ни один
- * из трёх не обнулял `adaptiveBitrateKbps`, а HUD показывает именно его, когда включён
- * адаптивный битрейт: сбрасывали не то, что показывают.
+ * **Why a separate function.** The reset was implemented three times, once in each streamer,
+ * and they drifted apart: RTMP and WHIP cleared the link list, but SRTLA did not, so after Stop
+ * the HUD showed frozen Wi-Fi and cellular bitrates as if the live stream were still running
+ * (14.09). None of the three reset `adaptiveBitrateKbps`, even though that is what the HUD shows
+ * when adaptive bitrate is enabled: they were resetting the wrong value.
  *
- * Пока сброс написан в трёх местах, он будет расходиться снова. Здесь он один.
+ * As long as the reset lives in three places, they will drift apart again. Here it is in one place.
  */
 fun StreamState.stopped(): StreamState = copy(
     status = StreamStatus.Idle,

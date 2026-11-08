@@ -17,8 +17,8 @@ class ProfileEditingTest {
         assertFalse(videoFieldsValid("1280", "720", "30", "-1"))
     }
 
-    /** Аудит 23.09: правка Wi-Fi на старом профиле с пустым списком давала
-     *  два Wi-Fi, и стример читал первый — старое умолчание. */
+    /** Audit 23.09: editing Wi-Fi on a legacy profile with an empty list produced
+         *  two Wi-Fi entries; the streamer read the first, the old default. */
     @Test
     fun `editing a channel on an empty legacy list does not duplicate it`() {
         val result = emptyList<ConnectionPriority>().withPriority("WIFI", enabled = true, weight = 3)

@@ -16,7 +16,7 @@ data class SrtStats(
     val droppedPackets: Long = 0,
 )
 
-/** Внутреннее состояние регулятора, открытое тестам. См. [AdaptiveBitrateSrtBelabox.debugState]. */
+/** Internal controller state, exposed to tests. See [AdaptiveBitrateSrtBelabox.debugState]. */
 internal data class AbrDebugState(
     val rttAverage: Double,
     val rttMin: Double,
@@ -42,7 +42,7 @@ class AdaptiveBitrateSrtBelabox(
      *  honors the user's target/min (already applied). */
     private var algorithm: AbrAlgorithm = AbrAlgorithm.BELABOX,
 ) {
-    // Читается вне монитора (см. update) — подписка ставится с другого потока.
+    // Read outside the monitor (see update)—the subscription is set up from another thread.
     @Volatile
     var onBitrateChange: ((Long) -> Unit)? = null
 
@@ -108,29 +108,29 @@ class AdaptiveBitrateSrtBelabox(
     // common on cellular; requiring several consecutive samples before cutting
     // hard removes the saw-tooth between minimum and target.
     private var consecutiveBadHigh = 0
-    // То же для средней ветки. packetsInFlight снимается мгновенным снимком раз
-    // в 200 мс, а сама величина пилит между подтверждениями: в поле 31.08
-    // наблюдалась пила 15 -> 1055 при неподвижном RTT (47-58 мс) и нуле потерь,
-    // потому что одна квитанция снимает с полёта сразу сотни пакетов
-    // (srt-ack before=419 after=247). Один такой снимок выше порога срезал
-    // битрейт вдвое, и на резком движении картинка сыпалась артефактами при
-    // полностью здоровой сети. Требуем, чтобы превышение держалось.
+    // Same for the middle branch. packetsInFlight is sampled instantaneously once every
+    // 200 ms, and the value oscillates between acknowledgments: in the field on 31.08,
+    // an oscillation from 15 -> 1055 was observed with steady RTT (47–58 ms) and zero packet loss,
+    // because one acknowledgment removes hundreds of packets from flight at once
+    // (srt-ack before=419 after=247). One such sample above the threshold halved the
+    // bitrate, and the picture broke up into artifacts during fast motion despite a
+    // perfectly healthy network. Require the threshold to remain exceeded.
     private var consecutiveBadMid = 0
     private var prevDroppedPackets = 0L
 
     /**
-     * Прогоняет один такт регулятора и, если битрейт изменился, зовёт
-     * [onBitrateChange] — **уже вне монитора**. Подписчик уходит в
-     * `setVideoBitrateOnFly()`, то есть в энкодер, и держать на этом вызове
-     * лок регулятора незачем: соседний поток на это время не мог даже
-     * прочитать `currentBitrateKbps()`.
+     * Runs one controller tick and, if the bitrate changed, calls
+     * [onBitrateChange]—**after leaving the monitor**. The subscriber invokes
+     * `setVideoBitrateOnFly()`, which goes to the encoder, so there is no need to hold
+     * the controller lock during this call: another thread could not even
+     * read `currentBitrateKbps()` during that time.
      */
     fun update(stats: SrtStats) {
         val newBitrate = updateLocked(stats) ?: return
         onBitrateChange?.invoke(newBitrate)
     }
 
-    /** @return новый битрейт, если он изменился, иначе null. */
+    /** @return the new bitrate if it changed, otherwise null. */
     @Synchronized
     private fun updateLocked(stats: SrtStats): Long? {
         if (stats.rttMs == 0.0) return null
@@ -213,10 +213,10 @@ class AdaptiveBitrateSrtBelabox(
     fun currentBitrateKbps(): Long = currentBitrate / 1000
 
     /**
-     * Снимок внутреннего состояния — только для тестов. Без него постоянные
-     * времени проверить нечем: наружу торчал один `currentBitrateKbps()`, и
-     * рассогласование периода (коэффициенты от цикла в 20 мс на цикле в 200 мс)
-     * прожило незамеченным именно поэтому.
+     * Snapshot of internal state—tests only. Without it, the time
+     * constants could not be verified: only `currentBitrateKbps()` was exposed, and the
+     * period mismatch (coefficients for a 20 ms cycle applied to a 200 ms cycle)
+     * went unnoticed for exactly that reason.
      */
     @Synchronized
     internal fun debugState(): AbrDebugState = AbrDebugState(
@@ -230,29 +230,29 @@ class AdaptiveBitrateSrtBelabox(
     )
 
     private companion object {
-        /** Сколько замеров подряд должно превышать средний порог, прежде чем
-         *  резать. Опрос идёт раз в 200 мс, значит два замера — 400 мс: одиночный
-         *  зубец пилы отсекается, а настоящий затор держится и режется быстрее,
-         *  чем жёсткой веткой (там три замера). */
+        /** How many consecutive samples must exceed the middle threshold before
+         *  reducing. Polling happens every 200 ms, so two samples mean 400 ms: a single
+         *  spike is filtered out, while a real bottleneck persists and is reduced sooner
+         *  than in the hard branch (which requires three samples). */
         const val CONSECUTIVE_BAD_MID = 2
 
         /*
-         * Коэффициенты сглаживания пересчитаны под НАШ период опроса.
+         * Smoothing coefficients have been recalculated for OUR polling interval.
          *
-         * Алгоритм — порт belacoder, а он крутит `update_bitrate()` каждые
-         * 20 мс (`BITRATE_UPDATE_INT 20`). Наш цикл в `SrtlaStream.startAdaptiveLoop`
-         * тикает раз в 200 мс, то есть в десять раз реже, но коэффициенты были
-         * скопированы дословно — значит КАЖДАЯ постоянная времени оказалась
-         * длиннее задуманной в десять раз: усреднение RTT 20 с вместо 2,
-         * дельта RTT 1 с вместо 0.1, пропускная способность 6.6 с вместо 0.66.
+         * The algorithm is a port of belacoder, which calls `update_bitrate()` every
+         * 20 ms (`BITRATE_UPDATE_INT 20`). Our loop in `SrtlaStream.startAdaptiveLoop`
+         * ticks every 200 ms, ten times less often, but the coefficients had been
+         * copied verbatim—which means EVERY time constant ended up
+         * ten times longer than intended: RTT averaging of 20 s instead of 2,
+         * RTT delta of 1 s instead of 0.1, and throughput of 6.6 s instead of 0.66.
          *
-         * Чтобы сохранить постоянную времени при периоде в N раз больше,
-         * затухание берётся в N-й степени: d_new = d_old^N. Отсюда 0.99^10 ≈ 0.90,
+         * To preserve the time constant when the interval is N times longer,
+         * decay is raised to the Nth power: d_new = d_old^N. Hence 0.99^10 ≈ 0.90,
          * 0.8^10 ≈ 0.11, 0.97^10 ≈ 0.74, 1.001^10 ≈ 1.01.
          *
-         * Дороже всего обходился именно `RTT_MIN_CREEP`: он ползёт вверх и
-         * задаёт `rttThMin` — единственный порог ветки роста `inc`. Прижатый
-         * `rttMin` держал ветку роста закрытой.
+         * The biggest cost came from `RTT_MIN_CREEP`: it creeps upward and
+         * sets `rttThMin`—the only threshold for the `inc` growth branch. A pinned
+         * `rttMin` kept the growth branch closed.
          */
         private const val BUFFER_AVG_DECAY = 0.90
         private const val RTT_AVG_DECAY = 0.90
@@ -260,9 +260,9 @@ class AdaptiveBitrateSrtBelabox(
         private const val THROUGHPUT_DECAY = 0.74
         private const val RTT_MIN_CREEP = 1.01
 
-        /** Затухание пиковых оценок джиттера (буфера и RTT) — тоже потиковое,
-         *  и тоже было в десять раз медленнее задуманного: всплеск рассасывался
-         *  двадцать секунд вместо двух. */
+        /** Decay of peak jitter estimates (buffer and RTT) is also per-tick,
+         *  and was also ten times slower than intended: a spike took
+         *  twenty seconds to dissipate instead of two. */
         private const val JITTER_DECAY = 0.90
     }
 

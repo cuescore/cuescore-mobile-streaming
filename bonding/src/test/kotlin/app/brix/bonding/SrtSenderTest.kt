@@ -70,8 +70,8 @@ class SrtSenderTest {
         assertEquals(1, h.controlPacketsOfType(Srt.PacketType.ACKACK.rawValue).size)
     }
 
-    /** Аудит 23.09: сервер SRTLA шлёт каждый ACK по всем линкам группы.
-     *  На копии того же номера второй ACKACK не нужен. */
+    /** Audit 23.09: the SRTLA server sends every ACK over all links in the group.
+      *  A second ACKACK for a copy of the same number is unnecessary. */
     @Test
     fun `duplicate ack copies from other links get a single ackack`() {
         val h = SrtSenderHarness()
@@ -101,9 +101,9 @@ class SrtSenderTest {
         h.clearOutput()
 
         h.sender.input(h.createNak(single = listOf(1L)))
-        // input() больше не запускает насос: отправка идёт в такт медиа, а не в
-        // такт входящим подтверждениям (см. outputPackets). Повтор уходит
-        // следующим же вызовом send(), то есть в пределах кадра.
+        // input() no longer starts the pump: sending follows media timing, not the
+        // timing of incoming acknowledgments (see outputPackets). Retransmission goes
+        // out on the very next send() call, i.e. within the frame.
         h.sender.send(20_000L)
 
         val retransmits = h.dataPackets()
@@ -147,12 +147,12 @@ class SrtSenderTest {
     }
 
     /**
-     * Проход насоса пересылает ВСЕ подходящие номера разом и в порядке очереди.
+      * The pump pass retransmits ALL eligible numbers at once and in queue order.
      *
-     * Прежняя реализация отправляла по одному пакету за вызов и ради каждого
-     * заново сканировала всю очередь повторов, перекладывая пропущенные через
-     * временный список. Поведение здесь то же — тест держит его, чтобы правка
-     * на стоимость не съехала в правку на смысл.
+      * The old implementation sent one packet per call and rescanned the entire
+      * retransmission queue each time, moving skipped packets through a temporary
+      * list. Behavior is unchanged here; the test ensures a cost optimization does
+      * not turn into a semantic change.
      */
     @Test
     fun `все запрошенные повторы уходят за один проход и по порядку`() {
@@ -172,11 +172,11 @@ class SrtSenderTest {
     }
 
     /**
-     * Очередь повторов ограничена тысячей номеров (см. handleNakPacket). На
-     * полной очереди один проход насоса обязан отработать целиком: раньше он
-     * стоил квадрата от её длины — сканирование плюс перекладывание списка на
-     * КАЖДЫЙ отправленный пакет. Стреляло это ровно при потерях, то есть когда
-     * запаса и так нет.
+      * The retransmission queue is limited to a thousand numbers (see handleNakPacket).
+      * A full queue must be processed in one pump pass: it used to take quadratic
+      * time in its length — scanning and copying the list for
+      * EACH packet sent. This happened precisely during losses, when there is no
+      * spare capacity anyway.
      */
     @Test
     fun `полная очередь повторов расходится за один проход`() {
@@ -195,10 +195,10 @@ class SrtSenderTest {
     }
 
     /**
-     * Пропущенные по окну RTT не выбрасываются и не уезжают в конец очереди:
-     * они остаются на своих местах и уходят следующим проходом, когда окно
-     * истечёт. Раньше их вынимали и возвращали через addAll, то есть порядок
-     * номеров перемешивался.
+      * Packets skipped due to the RTT window are not discarded or moved to the end:
+      * they stay in place and go out in the next pass, when the window
+      * expires. Previously they were removed and restored via addAll, so the order
+      * of packet numbers got scrambled.
      */
     @Test
     fun `пропущенные по RTT остаются в очереди и уходят следующим проходом`() {
@@ -209,26 +209,26 @@ class SrtSenderTest {
         h.clearOutput()
         setFieldLong(h.sender, "rttUs", 1_000_000L)
 
-        // Первый проход: 1 и 2 пересылаются и выпадают из очереди.
+        // First pass: 1 and 2 are retransmitted and removed from the queue.
         h.sender.input(h.createNak(single = listOf(1L, 2L)))
         h.sender.send(20_000L)
         assertEquals(listOf(1L, 2L), h.dataPackets().mapNotNull { h.readSn(it) })
         h.clearOutput()
 
-        // Второй проход внутри того же RTT: 1 и 2 запрошены снова и обязаны
-        // остаться в очереди, а свежие 5 и 6 — уйти.
+        // Second pass within the same RTT: 1 and 2 are requested again and must
+        // stay in the queue, while fresh packets 5 and 6 are sent.
         h.sender.input(h.createNak(single = listOf(1L, 2L, 5L, 6L)))
         h.sender.send(21_000L)
         assertEquals(listOf(5L, 6L), h.dataPackets().mapNotNull { h.readSn(it) })
         h.clearOutput()
 
-        // Окно RTT истекло — придержанные 1 и 2 уходят, и именно в своём порядке.
+        // The RTT window has expired — the held-back 1 and 2 are sent, in their original order.
         h.sender.send(20_000L + 1_100_000L)
         assertEquals(listOf(1L, 2L), h.dataPackets().mapNotNull { h.readSn(it) })
     }
 
-    /** Номер, который приёмник успел подтвердить, из очереди повторов просто
-     *  выпадает: пакета больше нет в полёте, пересылать нечего. */
+    /** A number already acknowledged by the receiver simply drops out of the
+      *  retransmission queue: the packet is no longer in flight, so there is nothing to resend. */
     @Test
     fun `подтверждённый номер выпадает из очереди повторов`() {
         val h = SrtSenderHarness()
@@ -239,8 +239,8 @@ class SrtSenderTest {
         setFieldLong(h.sender, "rttUs", 1_000_000L)
 
         h.sender.input(h.createNak(single = listOf(1L, 7L)))
-        // Квитанция снимает с полёта всё до 5-го включительно, значит 1 уже не
-        // нужен, а 7 ещё в полёте.
+        // The acknowledgment removes everything in flight through 5, inclusive, so 1 is no
+        // longer needed, while 7 is still in flight.
         h.sender.input(h.createAck(lastAckSn = 6L))
         h.sender.send(20_000L)
 
@@ -303,15 +303,15 @@ class SrtSenderTest {
 
     @Test
     fun `isSnAcked exclusive semantics — номер из квитанции ещё не подтверждён`() {
-        // Прежняя версия этого теста называлась «inclusive semantics — exact ack
-        // sn is acked» и закрепляла ошибку: номер в квитанции SRT это СЛЕДУЮЩИЙ
-        // ОЖИДАЕМЫЙ пакет, подтверждено всё строго меньше него.
+        // The old version of this test was named “inclusive semantics — exact ack
+        // sn is acked” and enshrined the bug: the number in an SRT acknowledgment is the NEXT
+        // EXPECTED packet; everything strictly before it has been acknowledged.
         //
-        // Из-за включительного сравнения мы удаляли из буфера ровно тот пакет,
-        // которого приёмнику не хватало. Поле 31.08: NAK всегда приходил на
-        // номер на единицу меньше первого в нашем буфере (sn=8421 при окне
-        // [8422..8661]), мы его не находили, повтор не уходил, и потеря
-        // становилась вечной.
+        // Because of the inclusive comparison, we removed exactly the packet that
+        // the receiver was missing. Field report 31.08: NAK always arrived for the
+        // number one below the first in our buffer (sn=8421 with a window of
+        // [8422..8661]); we did not find it, retransmission never went out, and the loss
+        // became permanent.
         assertFalse("сам номер квитанции НЕ подтверждён", Srt.isSnAcked(100L, 100L))
         assertFalse("то же на больших значениях", Srt.isSnAcked(0x7FFF_FFFFL, 0x7FFF_FFFFL))
         assertTrue("всё строго меньше — подтверждено", Srt.isSnAcked(99L, 100L))
@@ -660,15 +660,15 @@ class SrtSenderTest {
         val h = SrtSenderHarness()
         h.connect()
         h.setNextSequenceNumber(10)
-        h.enqueueAndSend(5) // в полёте: 10,11,12,13,14
-        // Квитанция с номером 12 означает «получено всё ДО 12», то есть 10 и 11.
-        // Сам пакет 12 ещё не получен и обязан остаться: иначе NAK на него нам
-        // будет нечем удовлетворить (полевой баг 31.08, см. Srt.isSnAcked).
+        h.enqueueAndSend(5) // in flight: 10,11,12,13,14
+        // An acknowledgment numbered 12 means “everything BEFORE 12 received”, i.e. 10 and 11.
+        // Packet 12 itself has not been received yet and must remain: otherwise we have no way
+        // to satisfy a NAK for it (field bug 31.08, see Srt.isSnAcked).
         h.sender.input(h.createAck(lastAckSn = 12L))
         assertEquals("остаются 12,13,14", 3, h.sender.packetsInFlightCount())
         h.clearOutput()
 
-        // Устаревшая квитанция не должна снимать более новые пакеты.
+        // A stale acknowledgment must not remove newer packets.
         h.sender.input(h.createAck(lastAckSn = 5L))
 
         assertEquals("remaining newer packets must survive stale ack", 3, h.sender.packetsInFlightCount())
@@ -687,13 +687,13 @@ class SrtSenderTest {
         assertEquals(8, h.sender.packetsInFlightCount())
         h.clearOutput()
 
-        // Квитанция 0x7FFFFFFF снимает всё ДО неё — семь пакетов; сам
-        // 0x7FFFFFFF ещё не получен и остаётся.
+        // Acknowledgment 0x7FFFFFFF removes everything BEFORE it — seven packets; 0x7FFFFFFF
+        // itself has not been received yet and remains.
         h.sender.input(h.createAck(lastAckSn = 0x7FFF_FFFFL))
         assertEquals("остаётся сам пограничный пакет", 1, h.sender.packetsInFlightCount())
 
-        // Квитанция 0 — это переход через границу: «жду 0», значит 0x7FFFFFFF
-        // получен. Здесь как раз проверяется кольцевое сравнение.
+        // Acknowledgment 0 is the wraparound transition: “waiting for 0” means 0x7FFFFFFF
+        // was received. This is where the circular comparison is tested.
         h.sender.input(h.createAck(lastAckSn = 0L))
         assertEquals(0, h.sender.packetsInFlightCount())
     }
@@ -745,12 +745,12 @@ class SrtSenderTest {
 
     @Test
     fun `dropOldPackets выбрасывает медиа, устаревшее сверх окна задержки`() {
-        // Прежняя версия теста проходила НЕ по заявленной причине: пакеты не
-        // выходили в эфир из-за таймера в насосе, а вовсе не потому, что их
-        // отбраковали как устаревшие. В комментарии стояло «3M > порога 2.5M»,
-        // хотя по числам самого теста разница выходила 2000 микросекунд.
-        // Здесь пакеты действительно старше окна: latency 2000 мс даёт порог
-        // 2.5 с, отправляем через 3 с после постановки в очередь.
+        // The previous version of this test passed for the WRONG reason: packets did not
+        // go out on the air because of the pump timer, not because they were
+        // rejected as stale. The comment said “3M > threshold 2.5M”,
+        // although the values in the test itself differed by 2000 microseconds.
+        // Here the packets really are older than the window: latency of 2000 ms gives a
+        // threshold of 2.5 s; send them 3 s after enqueueing.
         val h = SrtSenderHarness()
         h.connect()
         h.setNextSequenceNumber(0)
@@ -765,17 +765,17 @@ class SrtSenderTest {
 
     @Test
     fun `send выпускает всю накопленную очередь за один проход`() {
-        // Прежний насос выпускал не больше десяти пакетов за проход и держал
-        // таймер на 2 мс. Поскольку send() зовётся из потока медиа лишь ~75 раз
-        // в секунду, а пакетов на рабочий битрейт приходится ~1300 в секунду,
-        // одного его не хватало — и насос дополнительно дёргали из обоих потоков
-        // чтения, на каждый входящий управляющий пакет. Своё медиа уходило в
-        // такт чужим подтверждениям, а запись в сокет шла под общим монитором.
+        // The old pump sent no more than ten packets per pass and kept
+        // a 2 ms timer. Since send() is called from the media thread only ~75 times
+        // per second, while the target bitrate needs ~1300 packets per second,
+        // a single pass was not enough — the pump was also triggered from both reader threads,
+        // for each incoming control packet. Our media was paced by other parties' acknowledgments,
+        // and socket writes happened under a shared monitor.
         //
-        // Прежний тест на этом месте назывался «rate-limits to at most once per
-        // 2s» и называл 1000 микросекунд «одной секундой»: единица времени здесь
-        // микросекунды (nowMicros, параметр nowUs в харнессе), то есть порог был
-        // 2 мс, а не 2 с. Тест закреплял неверное понимание единицы.
+        // The old test was named “rate-limits to at most once per
+        // 2s” here and called 1000 microseconds “one second”: the time unit here
+        // is microseconds (nowMicros, parameter nowUs in the harness), so the threshold was
+        // 2 ms, not 2 s. The test codified an incorrect understanding of the unit.
         val h = SrtSenderHarness()
         h.connect()
         h.setNextSequenceNumber(0)

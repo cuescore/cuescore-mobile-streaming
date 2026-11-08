@@ -53,9 +53,9 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
     private val _state = MutableStateFlow(StreamState())
     override val state: StateFlow<StreamState> = _state.asStateFlow()
 
-    // Тик часов эфира — отдельно от состояния, чтобы ежесекундная отметка
-    // времени не перерисовывала весь экран стримера. Публикуется из того же
-    // цикла, что уже крутится, второго таймера не появляется.
+    // The live-stream clock tick is separate from state, so the per-second timestamp
+    // does not redraw the entire streamer screen. It is published from the same
+    // loop that is already running; no second timer is created.
     private val _uptimeTick = MutableStateFlow(0L)
     override val uptimeTick: StateFlow<Long> = _uptimeTick.asStateFlow()
 
@@ -73,30 +73,30 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
     private var currentUrl: String? = null
     private var activeGen = 0L
 
-    /** Энкодер уже собран этим prepare(). Без этого флага повторный prepare()
-     *  при живом превью гарантированно падал — см. комментарий в [prepare]. */
-    /** Накопленные байты для единственной строки канала в HUD. */
+    /*The encoder has already been prepared by this prepare(). Without this flag,
+     *  a second prepare() during a live preview would always fail — see [prepare]. */
+    /** Accumulated bytes for the single channel line in the HUD. */
     @Volatile
     private var sentBytes = 0L
 
     @Volatile
     private var prepared = false
 
-    /** Кодек, запечённый в энкодер последним prepare(): битрейт меняется на
-     *  лету, кодек — нет, его смена требует пересборки. */
+    /** Codec baked into the encoder by the most recent prepare(): the bitrate can change
+      *  on the fly, but the codec cannot; changing it requires rebuilding. */
     @Volatile
     private var appliedCodec: Codec? = null
 
-    /** Интервал ключевых кадров, запечённый последним prepare(). Как и кодек,
-     *  на лету не меняется, поэтому его правка тоже требует пересборки —
-     *  иначе настройка молча не применялась бы до перезапуска приложения. */
+    /** Keyframe interval baked into the most recent prepare(). Like the codec,
+      *  it cannot change on the fly, so changing it also requires rebuilding —
+      *  otherwise the setting would silently have no effect until the app restarts. */
     @Volatile
     private var appliedKeyframeSec: Int? = null
 
     private val opsScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // См. тот же комментарий в [Streamer]: камера общая на три транспорта,
-    // а чинилась до 03.09 только в SRTLA-пути.
+    // See the same comment in [Streamer]: the camera is shared by three transports,
+    // but until 03.09 it was only fixed in the SRTLA path.
     private val camera = CameraController(
         appContext = appContext,
         stream = stream,
@@ -106,9 +106,9 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
         updateState = { transform -> _state.update(transform) },
     )
 
-    // Отличить «не смогли подключиться с первого раза» от «оборвалось посреди
-    // эфира» иначе нечем: транспорт в обоих случаях зовёт onConnectionFailed.
-    // Первое — ошибка пользователю, второе — повод продолжать лестницу.
+    // Otherwise there is no way to distinguish “could not connect on the first try”
+    // from “disconnected mid-stream”: the transport calls onConnectionFailed in both cases.
+    // The first is an error for the user; the second is a reason to continue the retry ladder.
     @Volatile
     private var isReconnectAttempt = false
 
@@ -147,8 +147,8 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
     )
 
     /**
-     * Одна попытка лестницы. Транспортного переподключения, как у SRT, здесь
-     * нет — у WHIP это полный перезапуск потока.
+     * One retry-ladder attempt. Unlike SRT, there is no transport-level reconnection here:
+     * for WHIP this requires a full stream restart.
      */
     @Synchronized
     private fun attemptReconnect() {
@@ -158,8 +158,8 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
         isReconnectAttempt = true
         runCatching { stream.stopStream() }
         stream.startStream(url)
-        // stopStream() выше гасит захват с камеры, иначе эфир вернулся бы с
-        // замороженной картинкой.
+        // stopStream() above stops camera capture; otherwise the live stream would resume with
+        // a frozen image.
         camera.resumePreviewIfDetached()
     }
 
@@ -167,32 +167,32 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun configure(profile: StreamProfile, srtLatencyMs: Int) {
         this.profile = profile
-        // adaptiveBitrateEnabled здесь НЕ трогаем: это рантаймовый тумблер,
-        // которым владеет setAdaptiveBitrate(). Перезапись из сохранённого
-        // профиля сбрасывала ручной выбор на каждом нажатии «Старт» — тумблер
-        // сам собой включался при старте эфира. В SrtlaStreamer этот запрет
-        // стоит явным комментарием с самого начала, сюда не доехал.
-        // Регулятор по глубине очереди сюда НЕ подключён, и это осознанно.
-        // Он построен на посылке «TCP пакеты не теряет, при нехватке полосы
-        // растёт очередь отправки» — верной для RTMP. WHIP это WebRTC:
-        // сигнализация по HTTP, медиа поверх UDP/SRTP. Там пакеты теряются, а
-        // очередь может не расти вовсе, потому что сокет не упирается. То есть
-        // регулятор досидел бы до целевого битрейта и никогда не сбросил, лишь
-        // создавая видимость работающего ABR.
-        // Правильный вход для WHIP надо выбирать отдельно — у RootEncoder есть
-        // собственный признак затора `StreamBaseClient.hasCongestion(float)`.
+        // We do NOT touch adaptiveBitrateEnabled here: it is a runtime toggle controlled by
+        // setAdaptiveBitrate(). Reloading the saved profile reset the manual selection on every
+        // press of “Start” — the toggle would turn itself on when the live stream started.
+        // SrtlaStreamer has explicitly prohibited this from the start; that change did not
+        // make it here.
+        // The queue-depth controller is deliberately NOT connected here.
+        // It assumes “TCP does not lose packets, and the send queue grows when bandwidth
+        // is insufficient” — true for RTMP. WHIP is WebRTC:
+        // signaling uses HTTP, media uses UDP/SRTP. Packets can be lost, while the queue
+        // may not grow at all because the socket is not backlogged. In other words, the
+        // controller would sit at the target bitrate and never reduce it, merely giving the
+        // illusion of working ABR.
+        // WHIP needs a separately chosen signal; RootEncoder has its own congestion indicator
+        // `StreamBaseClient.hasCongestion(float)`.
         //
     }
 
     override fun prepare(): Boolean {
-        // `StreamBase.prepareVideo` бросает IllegalStateException, если идёт
-        // эфир, запись ИЛИ ПРЕВЬЮ. А UI зовёт prepare() дважды: один раз при
-        // подключении превью (тогда его ещё нет, и всё проходит) и второй раз
-        // по нажатию «Старт» — уже при живом превью. В SRTLA-пути от этого
-        // защищают ранний выход по `prepared` и остановка превью на время
-        // пересборки; сюда, как и остальные правки, они не доехали, поэтому
-        // старт RTMP/WHIP падал с «Failed to prepare stream» ВСЕГДА.
-        // Знание не новое: тот же отказ ловили в поле 31.08 на смене кодека.
+        // `StreamBase.prepareVideo` throws IllegalStateException while a stream, recording, OR
+        // PREVIEW is active. But the UI calls prepare() twice: once when connecting the preview
+        // (which is not active yet, so it succeeds), and again when the user presses “Start” —
+        // with the preview now live. In the SRTLA path, an early return on `prepared` and
+        // stopping the preview during reconfiguration prevent this; those safeguards, like the
+        // other fixes, never made it here, so RTMP/WHIP startup ALWAYS failed with
+        // “Failed to prepare stream”.
+        // This is not new: the same failure was caught in the field on 31.08 while changing codecs.
         val wantCodec = profile?.video?.codec ?: VideoSettings().codec
         val wantKeyframe = profile?.video?.keyframeIntervalSec ?: VideoSettings().keyframeIntervalSec
         if (prepared && appliedCodec == wantCodec && appliedKeyframeSec == wantKeyframe) return true
@@ -216,13 +216,13 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
                 height = p.height,
                 bitrate = p.bitrateKbps * 1000,
                 fps = p.fps,
-                // Поле keyframeIntervalSec жило в модели с самого начала и не
-                // читалось НИГДЕ: писалось на диск и не делало ничего. Интервал
-                // ключевых кадров важен для зрителя — от него зависит, как
-                // быстро подхватывается картинка при подключении и после
-                // потери, — поэтому доводим до энкодера, а не выбрасываем.
+                // The keyframeIntervalSec field has been in the model from the start but was never
+                // read: it was written to disk and did nothing. The keyframe interval matters to viewers —
+                // it determines how quickly video appears on connection and after
+                // loss — so pass it to the encoder instead of discarding it.
+                // loss — so we pass it on to the encoder instead of discarding it.
                 iFrameInterval = p.keyframeIntervalSec,
-                // Профиль по возможностям железа — см. SrtlaStreamer.prepare().
+                // Hardware-capability profile — see SrtlaStreamer.prepare().
                 profile = EncoderCapabilities.bestProfile(p.codec),
             )
             ensureMeteredAudioSource()
@@ -235,8 +235,8 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
             if (prepared) appliedCodec = p.codec
             appliedKeyframeSec = p.keyframeIntervalSec
             if (restorePreview) {
-                // Превью гасили ради пересборки — вернуть, иначе экран замрёт
-                // на последнем кадре и пользователь решит, что камера умерла.
+                // The preview was stopped for reconfiguration — restore it, or the screen will freeze
+                // on the last frame and the user will think the camera has died.
                 camera.resumePreviewIfDetached()
             }
             if (!videoOk || !audioOk) {
@@ -270,9 +270,9 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
             }
             false
         } catch (e: Exception) {
-            // Текст исключения раньше уходил ТОЛЬКО в StreamState.technical, то
-            // есть в лог не попадало ничего: на устройстве «Failed to prepare
-            // stream» и полная тишина в logcat, разбирать нечем.
+            // Previously, the exception text went ONLY to StreamState.technical, which means
+            // nothing was logged: on-device, “Failed to prepare
+            // stream” appeared with complete silence in logcat, leaving nothing to investigate.
             Log.e(tag, "prepare failed", e)
             _state.update {
                 it.copy(
@@ -312,20 +312,20 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
     }
 
 
-    /** Микрофон под текущим источником: с 17.09 чистый микрофон тоже завёрнут в
-     *  [OverlayAudioSource] — он считает уровень для индикатора в HUD. Все
-     *  настройки микрофона применяются к обёрнутому источнику. */
+    /*Microphone for the current source: since 17.09 even a clean microphone is wrapped in
+     *  [OverlayAudioSource] — it measures the level for the HUD indicator. All
+     *  microphone settings apply to the wrapped source. */
     private fun micSourceOrNull(): MicrophoneSource? = when (val source = stream.audioSource) {
         is MicrophoneSource -> source
         is app.brix.streaming.overlay.OverlayAudioSource -> source.micSourceForPreference()
         else -> null
     }
 
-    /** Поставить наш источник, если стоит голый микрофон из библиотеки. */
+    /*Install our source if the library’s bare microphone is selected. */
     private fun ensureMeteredAudioSource() {
-        // Только голый микрофон из библиотеки. Любой другой источник выбран
-        // сценой (например, внутренний звук при захвате экрана), и подменять
-        // его микрофоном при пересборке потока нельзя.
+        // Only the library’s bare microphone. Any other source was selected by the scene
+        // (for example, internal audio during screen capture), and must not be replaced
+        // with the microphone when rebuilding the stream.
         if (stream.audioSource !is MicrophoneSource) return
         runCatching {
             stream.changeAudioSource(app.brix.streaming.overlay.OverlayAudioSource(meter = micMeter))
@@ -351,12 +351,12 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
         applyMicSource()
     }
 
-    /** Предпочтение сбрасывается вместе с источником звука, поэтому вызывается и
-     *  из configure(), и при переключении кнопкой. */
+    /*The preference is reset together with the audio source, so this is called both
+     *  from configure() and when toggling the button. */
     private fun applyMicSource() {
         val mic = micSourceOrNull() ?: return
-        // HAL вправе отказать, и отказ надо видеть: иначе выбор «у камеры»
-        // молча остаётся выбором системы.
+        // The HAL may refuse, and that refusal must be visible; otherwise the “from camera”
+        // selection silently remains “system”.
         val applied = runCatching {
             mic.setPreferredDevice(MicDevices.deviceFor(appContext, preferredMic, preferredMicName))
         }.getOrDefault(false)
@@ -365,11 +365,11 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
         }
     }
 
-    // Один монитор на весь жизненный цикл — ровно то, что комментарий у
-    // release() обещал с самого начала, но чего в коде не было: released-флаг
-    // проверялся без него, поэтому ACTION_START из уведомления мог зайти в
-    // start() параллельно с release() и поднять эфир на уже освобождённом
-    // потоке. В SrtlaStreamer эта защита стоит с самого аудита (P0-2).
+    // One monitor for the entire lifecycle — exactly what the comment on
+    // release() promised from the start, but the code did not provide: the released flag
+    // was checked without it, so ACTION_START from a notification could call
+    // start() concurrently with release() and bring up a live stream on an already-released
+    // stream. SrtlaStreamer has had this protection since the original audit (P0-2).
     @Synchronized
     override fun start(url: String) {
         if (stream.isStreaming) return
@@ -379,17 +379,17 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
         reconnector.reset()
         isReconnectAttempt = false
         sentBytes = 0L
-        // Стартовый битрейт берём из настроек ABR, а не из видеопрофиля:
-        // initialBitrateKbps существует ровно затем, чтобы начинать осторожнее
-        // целевого и подниматься по мере того, как сеть себя покажет.
+        // Take the initial bitrate from ABR settings, not the video profile:
+        // initialBitrateKbps exists precisely to start more cautiously than the target
+        // and ramp up as the network proves itself.
         _state.update {
             it.copy(status = StreamStatus.Connecting, phase = session.phase, error = null, reconnectAttempt = 0)
         }
         stream.startStream(url)
         uptime.start()
         recorder.start()
-        // См. Streamer.start(): stopStream() гасит захват с камеры, и без этого
-        // после Stop->Start превью замирает на последнем кадре.
+        // See Streamer.start(): stopStream() stops camera capture, and without this
+        // the preview freezes on the last frame after Stop->Start.
         camera.resumePreviewIfDetached()
         camera.applyTorchOnStart()
     }
@@ -410,15 +410,15 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
 
     @Synchronized
     override fun reconnect() {
-        // Гвард раньше требовал фазу Live/Connecting, а сюда приходят именно
-        // из Failed — кнопка «Переподключить» в уведомлении после обрыва не
-        // делала вообще ничего, и лечился обрыв только Stop→Start руками.
-        // Переход Failed→Reconnecting таблицей ЗАПРЕЩЁН (Failed ведёт только в
-        // Idle/Released), поэтому из отказа поднимаемся через session.start(),
-        // как это делает SrtlaStreamer.
+        // The guard used to require the Live/Connecting phase, but callbacks arrive here
+        // from Failed — the “Reconnect” button in the notification after a disconnect
+        // did nothing at all, so recovery required a manual Stop→Start.
+        // The Failed→Reconnecting transition is FORBIDDEN by the table (Failed only leads to
+        // Idle/Released), so we recover from failure through session.start(),
+        // as SrtlaStreamer does.
         val url = currentUrl ?: return
-        // Ручное нажатие — явное «попробуй сейчас», поэтому лестница начинается
-        // заново, а не продолжается с тридцати секунд.
+        // A manual press explicitly means “try now”, so restart the ladder
+        // instead of continuing from thirty seconds.
         reconnector.reset()
         _state.update { it.copy(reconnectAttempt = 0) }
         when (session.phase) {
@@ -450,21 +450,21 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
     override fun showCamera() = camera.showCamera()
 
     /**
-     * Звук сцены: микрофон, звук телефона или оба.
+     * Scene audio: microphone, phone audio, or both.
      *
-     * Осторожно с оверлеями: когда включён звук донатов, источником звука
-     * работает наш микшер [OverlayAudioSource], и подмена источника здесь его
-     * снимает — донаты в эфире замолчат до следующего переключения. Это
-     * известное ограничение, а не случайность: оба механизма претендуют на
-     * один и тот же слот источника звука.
+     * Be careful with overlays: when donation sounds are enabled, our mixer
+     * [OverlayAudioSource] is the audio source, and replacing it here
+     * removes it — donation sounds will be silent on the live stream until the next toggle.
+     * This is a known limitation, not an accident: both mechanisms compete for
+     * the same audio-source slot.
      */
     override fun setSceneAudio(
         mode: SceneAudio,
         projection: android.media.projection.MediaProjection?,
     ): Boolean {
         val source = when (mode) {
-            // Свой источник даже для чистого микрофона: он же считает уровень
-            // для индикатора в HUD (MicLevelMeter), а микширование выключено.
+            // Use our own source even for a clean microphone: it also measures the level
+            // for the HUD indicator (MicLevelMeter), while mixing is disabled.
             SceneAudio.MIC -> app.brix.streaming.overlay.OverlayAudioSource(meter = micMeter)
             SceneAudio.INTERNAL -> {
                 val p = projection ?: return false
@@ -477,9 +477,9 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
         }
         return runCatching {
             stream.changeAudioSource(source)
-            // Мьют, усиление и выбор устройства сбрасываются вместе с
-            // источником — подтверждаем их заново, как и везде. Мьют раньше
-            // здесь не подтверждался вовсе: смена сцены открывала микрофон.
+            // Mute, gain, and device selection reset together with the
+            // source — confirm them again, as everywhere else. Mute was not confirmed
+            // here at all before: changing scenes unmuted the microphone.
             configureAudio(audioSettings)
             setMuted(_state.value.micMuted)
             true
@@ -491,29 +491,29 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
 
 
     override fun setAdaptiveBitrate(enabled: Boolean) {
-        // Регулятора на WHIP нет (см. updateAdaptiveBitrateLimits), поэтому
-        // и признак «включено» не ставим. Раньше кнопка загоралась и
-        // обещала защиту от затора, которой не было (аудит 23.09).
+        // WHIP has no controller (see updateAdaptiveBitrateLimits), so
+        // we do not set the “enabled” indicator either. Previously the button lit up and
+        // promised congestion protection that did not exist (audit 23.09).
         if (enabled) Log.w(tag, "ABR на WHIP не поддержан — кнопка не включается")
         _state.update { it.copy(adaptiveBitrateEnabled = false) }
     }
 
     override fun updateAdaptiveBitrateLimits(targetKbps: Int, minKbps: Int, initialKbps: Int) {
-        // Пусто намеренно: адаптивного битрейта на WHIP пока нет, см. комментарий
-        // в configure(). Заглушка честнее регулятора, который не увидит затора.
+        // Intentionally empty: adaptive bitrate is not available on WHIP yet; see the comment
+        // in configure(). A stub is more honest than a controller that cannot see congestion.
     }
 
     override fun setMuted(muted: Boolean) {
         _state.update { it.copy(micMuted = muted) }
-        // Наш источник глушит сам, после замера уровня (индикатор при мьюте
-        // показывает голос серым); голый микрофон — средствами библиотеки.
+        // Our source mutes itself after measuring the level (the indicator
+        // shows the voice in gray while muted); the bare microphone uses the library’s mute.
         when (val source = stream.audioSource) {
             is app.brix.streaming.overlay.OverlayAudioSource -> source.setMicMuted(muted)
             is MicrophoneSource -> if (muted) source.mute() else source.unMute()
         }
-        // Сцена «микрофон + звук телефона»: глушим микрофонную часть, звук
-        // телефона идёт дальше. Раньше этот источник падал мимо, и кнопка
-        // показывала «выключен», а голос шёл в эфир (аудит 23.09).
+        // For the “microphone + phone audio” scene, mute only the microphone part; phone audio
+        // continues. Previously this source was missed, so the button showed “off”
+        // while the voice was still broadcast (audit 23.09).
         (stream.audioSource as? com.pedro.encoder.input.sources.audio.MixAudioSource)?.let { mix ->
             if (muted) mix.mute() else mix.unMute()
         }
@@ -648,8 +648,8 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun onConnectionFailed(reason: String) {
         if (!session.matches(activeGen)) return
-        // Провалилась очередная попытка лестницы — не повод останавливаться:
-        // туннель, лифт и глухая зона кончаются, а эфир продолжается.
+        // Another retry-ladder attempt failed — that is no reason to stop:
+        // tunnels, elevators, and dead zones end, and the live stream continues.
         if (isReconnectAttempt) {
             if (updateSession(SessionPhase.Reconnecting)) reconnector.schedule()
             return
@@ -661,9 +661,9 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
 
     override fun onDisconnect() {
         if (!session.matches(activeGen)) return
-        // До 03.09 обрыв сразу переводил сессию в Failed, и на этом всё
-        // заканчивалось: автоматических попыток не было, а ручная кнопка из
-        // Failed не работала. Теперь — та же лестница, что у SRTLA.
+        // Before 03.09, a disconnect immediately moved the session to Failed, ending
+        // everything: there were no automatic attempts, and the manual button from
+        // Failed did not work. Now it uses the same ladder as SRTLA.
         if (session.phase == SessionPhase.Live || session.phase == SessionPhase.Connecting) {
             if (updateSession(SessionPhase.Reconnecting)) {
                 _state.update {
@@ -693,11 +693,11 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
     override fun onAuthSuccess() = Unit
 
     override fun onNewBitrate(bitrate: Long) {
-        // Одна строка канала вместо пустого блока в HUD. Бондинга у WHIP нет —
-        // сокет ровно один, поэтому доля всегда 100%, и это честно: блок
-        // показывает, куда идёт поток, а не сравнение путей. Байты копим сами:
-        // счётчика отправленного RootEncoder наружу не даёт, а onNewBitrate
-        // прилетает раз в секунду и несёт биты в секунду.
+        // One channel row instead of an empty HUD block. WHIP has no bonding —
+        // there is exactly one socket, so the share is always 100%; that is honest: the block
+        // shows where the stream is going, not a comparison of paths. We accumulate bytes ourselves:
+        // RootEncoder exposes no sent-byte counter, and onNewBitrate
+        // arrives once per second and reports bits per second.
         sentBytes += bitrate / 8
         val link = ConnectionStat(
             type = "whip",
@@ -721,8 +721,8 @@ class WhipStreamer(context: Context) : ConnectChecker, LiveStreamer {
             }
             it.copy(status = status, phase = session.phase, connectedAtElapsedMs = connectedAt)
         }
-        // Та же строка, что у SRTLA: по ней разбираются полевые журналы и стенд
-        // (bench/). У RTMP и WHIP переходов в логе не было вовсе.
+        // The same row as SRTLA: field logs and the bench (bench/) rely on it.
+        // RTMP and WHIP had no transitions in the log at all.
         Log.i(tag, "updateSession $to (from gen=$gen)")
         return true
     }

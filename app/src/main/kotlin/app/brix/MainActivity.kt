@@ -108,18 +108,19 @@ class MainActivity : ComponentActivity() {
             BrixTheme(appearance = settings.appearance) {
                 var introDone by rememberSaveable { mutableStateOf(false) }
                 val settingsLoaded by settingsViewModel.settingsLoaded.collectAsState()
-                // Настоящие настройки, а не заглушка до чтения диска: по заглушке
-                // (onboardingDone = false) мастер выскакивал бы у всех.
+                // Real settings, not the placeholder before disk loading:
+                // its onboardingDone = false would show the wizard to everyone.
                 val real = settingsLoaded && !settingsViewModel.isPlaceholder(settings)
                 val needWizard = real && settings.onboardingDone == false
                 val livePhase = introDone && real && !needWizard
 
-                // Ориентация следует за фазой: заставка и мастер портретные,
-                // эфир альбомный (владелец, 16.09). Экран эфира создаётся только
-                // когда окно УЖЕ альбомное — камера стартует один раз и в своей
-                // ориентации. 15.09 заставка шла поверх живой камеры, и поворот
-                // под ней трижды ломал превью (коммит 0f190e1); цена нового
-                // порядка — секунда пустого экрана, пока камера поднимается.
+                // Orientation follows the phase: intro and wizard are portrait,
+                // streaming is landscape (the owner, 16.09). Create the streaming
+                // screen only when the window is ALREADY landscape, so the camera
+                // starts once in its own orientation. On 15.09 the intro ran over
+                // a live camera, with rotation breaking preview three times
+                // (commit 0f190e1). The new ordering costs a second of empty screen
+                // while the camera starts.
                 LaunchedEffect(livePhase) {
                     landscape = livePhase
                     requestedOrientation = if (livePhase) {
@@ -134,11 +135,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 LanguageRecreateEffect(settings = settings, settingsLoaded = settingsLoaded)
-                // «Окно уже альбомное» — по фактическому размеру, а не по
-                // LocalConfiguration: 16.09 окно повернулось, а orientation в
-                // композиции так и осталась портретной — экран эфира не
-                // создался, светился пустой фон. Конфигурация у нас подменена
-                // ради языка (attachBaseContext), размер же врать не может.
+                // Detect landscape from actual dimensions, not LocalConfiguration:
+                // on 16.09 the window rotated but composition's orientation stayed
+                // portrait, leaving an empty background instead of the streaming
+                // screen. We override configuration for language (attachBaseContext);
+                // actual dimensions cannot lie.
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     if (livePhase && maxWidth > maxHeight) {
                         StreamScreen(settings = settings, settingsViewModel = settingsViewModel)
@@ -147,12 +148,12 @@ class MainActivity : ComponentActivity() {
                 }
                 if (introDone && needWizard) {
                     OnboardingScreen(viewModel = settingsViewModel)
-                    // Ссылка brix:// или moblin:// на свежей установке — это и
-                    // есть ответ на мастер: берём её целиком и мастер закрываем.
+                    // A brix:// or moblin:// link on a fresh install answers the
+                    // wizard: import it in full and close the wizard.
                     DeepLinkImportDialog(pendingDeepLink, settingsViewModel::completeOnboardingWithImport)
                 }
-                // rememberSaveable — чтобы смена языка или поворот, которые
-                // пересоздают Activity, не проигрывали заставку заново.
+                // rememberSaveable prevents replaying the intro when language
+                // changes or rotation recreate Activity.
                 if (!introDone) {
                     BrixIntro(onFinished = { introDone = true })
                 }
@@ -160,8 +161,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Пересоздание (смена языка) открывает окно по манифесту, то есть портретным.
-    // Если до него был эфир — сразу просим альбомное, без лишнего переворота.
+    // Recreation (language change) opens the manifest's portrait window.
+    // If streaming was active, request landscape immediately without extra rotation.
     private var landscape = false
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -240,8 +241,8 @@ private fun LanguageRecreateEffect(
     }
 }
 
-/** Схема и хост адреса сервера — без пути, запроса и учётных данных, где
- *  лежат ключи. Для показа в диалоге импорта. */
+/** Server URL scheme and host, without path, query or credentials that may
+ *  contain keys. For display in the import dialog. */
 private fun serverHostOf(url: String): String {
     val scheme = url.substringBefore("://", "")
     val host = url.substringAfter("://")
@@ -263,7 +264,7 @@ private fun DeepLinkImportDialog(
     val link = pendingLink.value ?: return
     val config = SettingsDeepLink.decodeAny(link)
     if (config == null) {
-        // Саму ссылку не пишем: в ней бывают ключи трансляции (аудит 23.09).
+        // Do not log the link itself: it may contain stream keys (audit 23.09).
         Log.w("BrixDeepLink", "unrecognized or malformed link, len=${link.length}")
         pendingLink.value = null
         return
@@ -280,10 +281,10 @@ private fun DeepLinkImportDialog(
                         config.serverProfiles.size,
                     ),
                 )
-                // Куда пойдёт эфир — до нажатия «Импортировать». Раньше решение
-                // принималось вслепую по счётчикам, а ссылку с подставным
-                // сервером легко прислать под видом «вот мой конфиг» (аудит
-                // 23.09). Показываем схему и хост, без пути и ключа.
+                // Show the broadcast destination before Import. Previously users
+                // decided blindly from counts, and a link with a substituted
+                // server could arrive as "here is my config" (audit 23.09).
+                // Show scheme and host, without path or key.
                 config.serverProfiles.forEach { server ->
                     Text(
                         text = "${server.name} — ${serverHostOf(server.baseUrl)}",

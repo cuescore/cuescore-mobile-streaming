@@ -51,22 +51,22 @@ object Srt {
         readUInt32(packet, offset)
 
     /**
-     * Подтверждён ли пакет `sn` квитанцией с номером `ackSn`.
+     * Whether packet `sn` has been acknowledged by an ACK with number `ackSn`.
      *
-     * Номер в квитанции SRT — это СЛЕДУЮЩИЙ ОЖИДАЕМЫЙ пакет: подтверждено всё
-     * строго меньше него, а сам он ещё не получен. Раньше здесь стояло
-     * `sn == ackSn -> true`, то есть мы удаляли из буфера ровно тот пакет,
-     * которого приёмнику и не хватало.
+     * The number in an SRT ACK is the NEXT EXPECTED packet: everything strictly
+     * below it is acknowledged, while the number itself has not yet arrived.
+     * Previously this said `sn == ackSn -> true`, which removed from the buffer
+     * exactly the packet the receiver was still missing.
      *
-     * Полевое доказательство 31.08, независимое от чтения спецификации: сервер
-     * присылал NAK на номер, который ВСЕГДА оказывался ровно на единицу меньше
-     * первого пакета в нашем буфере — `sn=8421 окно=[8422..8661]`,
-     * `sn=11719 окно=[11720..11955]`, и так каждый раз. Мы этот номер у себя не
-     * находили (80-90% всех NAK уходило в никуда), повтор не отправлялся, и
-     * потеря становилась вечной: картинка на приёме сыпалась до следующего
-     * опорного кадра, то есть до двух секунд.
+     * Field evidence from 31.08, independent of reading the spec: the server
+     * sent NAKs for a number that was ALWAYS exactly one less than the first
+     * packet in our buffer — `sn=8421 window=[8422..8661]`,
+     * `sn=11719 window=[11720..11955]`, and every time. We couldn't find that
+     * number in our buffer (80-90% of all NAKs went nowhere), no retransmission
+     * was sent, and the loss became permanent: the receiving picture broke up
+     * until the next keyframe, up to two seconds later.
      *
-     * Сравнение делается по кольцу: номера 31-битные и переполняются.
+     * Comparison is performed on a ring: sequence numbers are 31-bit and wrap.
      */
     fun isSnAcked(sn: Long, ackSn: Long): Boolean =
         if (sn == ackSn) false
@@ -180,14 +180,14 @@ internal fun writeInt64(bytes: ByteArray, offset: Int, value: Long) {
 }
 
 /**
- * Какой из разрешённых адресов брать.
+ * Which of the resolved addresses to use.
  *
- * Смысл настройки: некоторые операторы и приёмники ведут себя с IPv6 хуже, чем
- * с IPv4 — соединение устанавливается, а данные не идут. Moblin держит для
- * этого отдельный переключатель стратегии разрешения имён; здесь то же самое.
+ * The setting exists because some carriers and receivers handle IPv6 worse than
+ * IPv4 — the connection is established, but no data flows. Moblin has a separate
+ * hostname-resolution strategy toggle for this; this does the same.
  *
- * @param preferIpv4 брать первый IPv4, если он есть. Если IPv4 нет вовсе,
- *  возвращается первый доступный: остаться без адреса хуже, чем пойти по IPv6.
+ * @param preferIpv4 use the first IPv4 if available. If there is no IPv4,
+ *  return the first available address: having no address is worse than using IPv6.
  */
 fun pickAddress(addresses: List<java.net.InetAddress>, preferIpv4: Boolean): java.net.InetAddress? {
     if (addresses.isEmpty()) return null

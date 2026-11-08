@@ -1,13 +1,12 @@
 package app.brix.core
 
 /**
- * Похоже ли на адрес сервера: схема, `://` и непустой хост.
+ * Whether this resembles a server URL: scheme, `://` and a nonempty host.
  *
- * Разбор руками, а не через `java.net.URI`: тот отдаёт `host = null` для имён с
- * подчёркиванием (`belabox_home.local`) и бросает исключение на символах вроде
- * `|` или пробела в streamid — то есть объявлял бы битыми адреса, к которым
- * подключение работает. Здесь цель скромнее: поймать пустое поле и адрес без
- * схемы, а не валидировать URL по RFC.
+ * Parse manually, not with `java.net.URI`: it returns `host = null` for
+ * underscores (`belabox_home.local`) and throws on `|` or spaces in streamid,
+ * rejecting URLs that actually connect successfully. The goal here is narrower:
+ * catch empty fields and URLs without schemes, not validate against the RFC.
  */
 fun looksLikeServerUrl(raw: String): Boolean {
     val s = raw.trim()
