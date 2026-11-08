@@ -343,13 +343,15 @@
     <string name="onboarding_perm_notifications">Notifications</string>
     <string name="onboarding_quality_title">Quality</string>
     <string name="onboarding_cuescore_title">CueScore player profile</string>
-    <string name="onboarding_cuescore_text">Enter your CueScore player profile ID. We’ll verify it and add a full-screen scoreboard to your stream.</string>
-    <string name="onboarding_cuescore_player_id">Player profile ID</string>
-    <string name="onboarding_cuescore_verify">Verify profile</string>
-    <string name="onboarding_cuescore_verifying">Checking profile…</string>
-    <string name="onboarding_cuescore_verified">Verified player: %1$s</string>
-    <string name="onboarding_cuescore_not_found">No CueScore player profile was found for that ID.</string>
-    <string name="onboarding_cuescore_lookup_failed">Could not check the profile. Check your connection and try again.</string>
+    <string name="onboarding_cuescore_text">Search for your name and select your CueScore player profile. We’ll add a full-screen scoreboard to your stream.</string>
+    <string name="onboarding_cuescore_search_name">Player name (at least 2 characters)</string>
+    <string name="onboarding_cuescore_search">Search players</string>
+    <string name="onboarding_cuescore_searching">Searching…</string>
+    <string name="onboarding_cuescore_edit">Change player</string>
+    <string name="onboarding_cuescore_toggle_help">Look for this button in the main stream controls. Tap it to show your player scoreboard overlay; tap it again to hide it. You can turn it on or off while streaming.</string>
+    <string name="onboarding_cuescore_more">Show more players</string>
+    <string name="onboarding_cuescore_not_found">No matching CueScore players were found.</string>
+    <string name="onboarding_cuescore_lookup_failed">Could not search for players. Check your connection and try again.</string>
     <!-- Language this file is written in. The language selection screen uses it
          to distinguish our translation from Android system languages. -->
     <string name="locale_tag" translatable="false">en</string>

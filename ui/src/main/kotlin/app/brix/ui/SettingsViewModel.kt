@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import app.brix.core.withPriority
 import app.brix.core.ConnectionPriority
 import app.brix.core.AppSettings
+import app.brix.core.CueScorePlayer
 import app.brix.core.ButtonAction
 import app.brix.core.Ids
 import app.brix.core.QuickButtonColumn
@@ -43,6 +44,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,10 +58,9 @@ internal const val CUESCORE_SCOREBOARD_URL_PREFIX =
 private const val LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX =
     "https://cuescore.com/scoreboard/stream/?tableId="
 
-internal sealed interface CueScorePlayerLookupResult {
-    data class Found(val name: String) : CueScorePlayerLookupResult
-    data object NotFound : CueScorePlayerLookupResult
-    data object Unavailable : CueScorePlayerLookupResult
+internal sealed interface CueScorePlayerSearchResult {
+    data class Found(val players: List<CueScorePlayer>, val nextOffset: Int?) : CueScorePlayerSearchResult
+    data object Unavailable : CueScorePlayerSearchResult
 }
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -485,11 +486,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         persist()
     }
 
-    internal suspend fun lookupCueScorePlayer(playerId: String): CueScorePlayerLookupResult = withContext(Dispatchers.IO) {
-        val numericId = playerId.toLongOrNull()
-            ?.takeIf { it > 0 }
-            ?: return@withContext CueScorePlayerLookupResult.NotFound
-        val connection = URL("https://api.cuescore.com/participant/?id=$numericId")
+    internal fun rememberedCueScorePlayer(): CueScorePlayer? {
+        val current = _settings.value
+        current.cueScorePlayer?.let { return it }
+        // Older setups stored the selected player only in the scoreboard URL.
+        val playerId = current.widgets.asSequence()
+            .filter { it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url) }
+            .mapNotNull {
+                it.url.removePrefix(CUESCORE_SCOREBOARD_URL_PREFIX)
+                    .removePrefix(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX)
+                    .substringBefore('&').toLongOrNull()?.takeIf { id -> id > 0 }
+            }
+            .firstOrNull() ?: return null
+        return CueScorePlayer(playerId.toString())
+    }
+
+    internal fun rememberCueScorePlayer(player: CueScorePlayer) {
+        _settings.value = _settings.value.copy(cueScorePlayer = player)
+        persist()
+    }
+
+    internal suspend fun searchCueScorePlayers(query: String, offset: Int = 0): CueScorePlayerSearchResult = withContext(Dispatchers.IO) {
+        require(query.trim().codePointCount(0, query.trim().length) >= 2)
+        require(offset >= 0)
+        val encodedQuery = URLEncoder.encode(query.trim(), "UTF-8")
+        val connection = URL("https://api.cuescore.com/participant/search/player/?q=$encodedQuery&limit=25&offset=$offset")
             .openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
@@ -497,24 +518,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             connection.readTimeout = 10_000
             val status = connection.responseCode
             if (status !in 200..299) {
-                return@withContext if (status == HttpURLConnection.HTTP_NOT_FOUND) {
-                    CueScorePlayerLookupResult.NotFound
-                } else {
-                    CueScorePlayerLookupResult.Unavailable
-                }
+                Log.w("CueScoreSearch", "Player search failed with HTTP $status")
+                return@withContext CueScorePlayerSearchResult.Unavailable
             }
             val response = connection.inputStream.bufferedReader().use { it.readText() }
-            val participant = JSONObject(response)
-            val name = participant.optString("name")
-            if (participant.optLong("playerId", -1) == numericId && name.isNotBlank()) {
-                CueScorePlayerLookupResult.Found(name)
-            } else {
-                CueScorePlayerLookupResult.NotFound
-            }
-        } catch (_: IOException) {
-            CueScorePlayerLookupResult.Unavailable
-        } catch (_: JSONException) {
-            CueScorePlayerLookupResult.Unavailable
+            parseCueScorePlayerSearchResponse(response, offset)
+        } catch (e: IOException) {
+            Log.w("CueScoreSearch", "Player search request failed", e)
+            CueScorePlayerSearchResult.Unavailable
+        } catch (e: JSONException) {
+            Log.w("CueScoreSearch", "Invalid player search response", e)
+            CueScorePlayerSearchResult.Unavailable
         } finally {
             connection.disconnect()
         }
@@ -690,6 +704,33 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 internal fun isCueScoreScoreboardUrl(url: String): Boolean =
     url.startsWith(CUESCORE_SCOREBOARD_URL_PREFIX) ||
         url.startsWith(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX)
+
+internal fun parseCueScorePlayerSearchResponse(response: String, offset: Int): CueScorePlayerSearchResult.Found {
+    val page = JSONObject(response)
+    val items = page.getJSONArray("items")
+    val players = (0 until items.length()).map { index ->
+        val participant = items.getJSONObject(index)
+        val playerId = participant.getLong("playerId")
+        val name = participant.getString("name")
+        if (playerId <= 0 || name.isBlank()) throw JSONException("Invalid player in search results")
+        val country = participant.optJSONObject("country")
+        CueScorePlayer(
+            id = playerId.toString(),
+            name = name,
+            imageUrl = participant.optString("image").takeIf { it.isNotBlank() && it != "null" },
+            countryImageUrl = country?.optString("image")?.takeIf { it.isNotBlank() && it != "null" },
+            countryName = country?.optString("name")?.takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+    val nextOffset = if (page.getBoolean("hasMore")) {
+        page.getInt("nextOffset").also {
+            if (it <= offset) throw JSONException("Invalid search pagination offset")
+        }
+    } else {
+        null
+    }
+    return CueScorePlayerSearchResult.Found(players, nextOffset)
+}
 
 fun newStreamProfile(name: String): StreamProfile =
     StreamProfile(id = Ids.newId(), name = name)

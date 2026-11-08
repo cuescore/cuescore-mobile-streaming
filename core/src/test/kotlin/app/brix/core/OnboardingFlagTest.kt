@@ -3,6 +3,7 @@ package app.brix.core
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -34,5 +35,37 @@ class OnboardingFlagTest {
     fun `пройденный мастер остаётся пройденным`() {
         val done = defaultAppSettings().copy(onboardingDone = true)
         assertEquals(true, roundTrip(done).onboardingDone)
+    }
+
+    @Test
+    fun `verified CueScore player survives saving and restarting the guide`() {
+        val player = CueScorePlayer(
+            id = "12345",
+            name = "Test Player",
+            imageUrl = "https://img.cuescore.com/player.png",
+            countryImageUrl = "https://cuescore.com/img/flags/no.png",
+            countryName = "Norway",
+        )
+        val completed = roundTrip(defaultAppSettings().copy(onboardingDone = true, cueScorePlayer = player))
+        val restarted = roundTrip(completed.copy(onboardingDone = false))
+
+        assertEquals(false, restarted.onboardingDone)
+        assertEquals(player, restarted.cueScorePlayer)
+    }
+
+    @Test
+    fun `verified CueScore player is saved before guide completion`() {
+        val player = CueScorePlayer("12345", "Test Player")
+        val saved = roundTrip(defaultAppSettings().copy(cueScorePlayer = player))
+
+        assertEquals(false, saved.onboardingDone)
+        assertEquals(player, saved.cueScorePlayer)
+    }
+
+    @Test
+    fun `older settings have no saved CueScore player`() {
+        val old = json.decodeFromString<AppSettings>("""{"onboardingDone":true}""").migrate()
+
+        assertNull(old.cueScorePlayer)
     }
 }

@@ -2,10 +2,13 @@ package app.brix.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,12 +20,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -40,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,7 +55,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -57,15 +69,97 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import app.brix.core.Ids
+import app.brix.core.CueScorePlayer
+import app.brix.core.ButtonAction
 import app.brix.core.ServerProfile
 import app.brix.core.ServerType
 import app.brix.core.SettingsDeepLink
 import app.brix.core.SharedConfig
 import app.brix.core.StreamPreset
 import app.brix.core.defaultStreamPresets
+import com.bumptech.glide.Glide
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ExecutionException
 
 private enum class OnboardingStep { WELCOME, CUESCORE, PERMISSIONS, SERVER, QUALITY, DONE }
+
+@Composable
+private fun CueScorePlayerRow(player: CueScorePlayer, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
+    ) {
+        Box(Modifier.size(48.dp)) {
+            Box(
+                Modifier.fillMaxSize().clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp),
+                )
+                CueScorePlayerImage(
+                    player.imageUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+            player.countryImageUrl?.let { flagUrl ->
+                CueScorePlayerImage(
+                    flagUrl,
+                    modifier = Modifier.align(Alignment.BottomEnd).size(24.dp, 18.dp),
+                    contentDescription = player.countryName,
+                )
+            }
+        }
+        Text(
+            player.name ?: player.id,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun CueScorePlayerImage(
+    url: String?,
+    modifier: Modifier,
+    contentDescription: String? = null,
+    contentScale: ContentScale = ContentScale.Fit,
+) {
+    val context = LocalContext.current.applicationContext
+    val imageSize = with(LocalDensity.current) { 48.dp.roundToPx() }
+    val bitmap by produceState<ImageBitmap?>(null, url, imageSize) {
+        value = null
+        if (url.isNullOrBlank()) return@produceState
+        val imageUrl = if (url.startsWith("//")) "https:$url" else url
+        val request = Glide.with(context).asBitmap().load(imageUrl)
+            .dontTransform().submit(imageSize, imageSize)
+        try {
+            value = withContext(Dispatchers.IO) { request.get().asImageBitmap() }
+            awaitDispose { }
+        } catch (e: ExecutionException) {
+            Log.w("CueScorePlayerImage", "Could not load participant image", e.cause)
+        } finally {
+            Glide.with(context).clear(request)
+        }
+    }
+    bitmap?.let {
+        Image(
+            bitmap = it,
+            contentDescription = contentDescription,
+            contentScale = contentScale,
+            modifier = modifier,
+        )
+    }
+}
 
 // Own list, not StreamScreen's: that private list separates required permissions
 // from notifications for stream gating. Request everything together here:
@@ -92,7 +186,8 @@ private val PRESET_NOTES = listOf(
  * while the camera streaming screen has not been created at all.
  *
  * Draft stays in rememberSaveable and writes settings in one final call
- * ([SettingsViewModel.completeOnboarding]). Changing language on step two
+ * ([SettingsViewModel.completeOnboarding]), except the verified CueScore player,
+ * which is saved immediately for subsequent runs. Changing language on step two
  * recreates Activity; the step and entered values survive as with rotation.
  *
  * Mascot and name deliberately omitted: the owner (16.09) found them redundant
@@ -110,12 +205,47 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
     var serverUrl by rememberSaveable { mutableStateOf("") }
     var serverKey by rememberSaveable { mutableStateOf("") }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
-    var cueScorePlayerId by rememberSaveable { mutableStateOf("") }
-    var verifiedCueScorePlayerId by rememberSaveable { mutableStateOf<String?>(null) }
-    var cueScorePlayerName by rememberSaveable { mutableStateOf<String?>(null) }
+    val rememberedPlayer = remember { viewModel.rememberedCueScorePlayer() }
+    var cueScoreSearchQuery by rememberSaveable { mutableStateOf("") }
+    var cueScoreEditing by rememberSaveable { mutableStateOf(rememberedPlayer == null) }
+    var verifiedCueScorePlayerId by rememberSaveable { mutableStateOf(rememberedPlayer?.id) }
+    var cueScorePlayerName by rememberSaveable { mutableStateOf(rememberedPlayer?.name) }
+    var cueScorePlayerImageUrl by rememberSaveable { mutableStateOf(rememberedPlayer?.imageUrl) }
+    var cueScoreCountryImageUrl by rememberSaveable { mutableStateOf(rememberedPlayer?.countryImageUrl) }
+    var cueScoreCountryName by rememberSaveable { mutableStateOf(rememberedPlayer?.countryName) }
     var cueScoreLookupMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var cueScoreLookupInProgress by rememberSaveable { mutableStateOf(false) }
+    var cueScoreLookupInProgress by remember { mutableStateOf(false) }
+    var cueScoreSearchResults by remember { mutableStateOf<List<CueScorePlayer>?>(null) }
+    var cueScoreNextOffset by remember { mutableStateOf<Int?>(null) }
+    var cueScoreExampleEnabled by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    fun searchPlayers(offset: Int = 0) {
+        val query = cueScoreSearchQuery.trim()
+        coroutineScope.launch {
+            cueScoreLookupInProgress = true
+            cueScoreLookupMessage = null
+            if (offset == 0) {
+                cueScoreSearchResults = null
+                cueScoreNextOffset = null
+            }
+            try {
+                when (val result = viewModel.searchCueScorePlayers(query, offset)) {
+                    is CueScorePlayerSearchResult.Found -> {
+                        cueScoreSearchResults = if (offset == 0) result.players else {
+                            (cueScoreSearchResults.orEmpty() + result.players).distinctBy { it.id }
+                        }
+                        cueScoreNextOffset = result.nextOffset
+                    }
+                    CueScorePlayerSearchResult.Unavailable -> {
+                        cueScoreLookupMessage = context.getString(R.string.onboarding_cuescore_lookup_failed)
+                    }
+                }
+            } finally {
+                cueScoreLookupInProgress = false
+            }
+        }
+    }
     // Default to the existing profile value so Next without a selection
     // changes nothing.
     val currentVideo = settings.selectedStreamProfile()?.video
@@ -211,63 +341,100 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                     StepTitle(stringResource(R.string.onboarding_cuescore_title))
                     StepText(stringResource(R.string.onboarding_cuescore_text))
                     BrixCard {
-                        OutlinedTextField(
-                            value = cueScorePlayerId,
-                            onValueChange = {
-                                cueScorePlayerId = it
-                                verifiedCueScorePlayerId = null
-                                cueScorePlayerName = null
-                                cueScoreLookupMessage = null
-                            },
-                            label = { Text(stringResource(R.string.onboarding_cuescore_player_id)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            enabled = !cueScoreLookupInProgress,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        FilledTonalButton(
-                            shape = BrixButtonShape,
-                            onClick = {
-                                val playerId = cueScorePlayerId.trim()
-                                coroutineScope.launch {
-                                    cueScoreLookupInProgress = true
-                                    verifiedCueScorePlayerId = null
-                                    cueScorePlayerName = null
+                        if (cueScoreEditing) {
+                            OutlinedTextField(
+                                value = cueScoreSearchQuery,
+                                onValueChange = {
+                                    cueScoreSearchQuery = it
+                                    cueScoreSearchResults = null
+                                    cueScoreNextOffset = null
                                     cueScoreLookupMessage = null
-                                    try {
-                                        when (val result = viewModel.lookupCueScorePlayer(playerId)) {
-                                            is CueScorePlayerLookupResult.Found -> {
-                                                verifiedCueScorePlayerId = playerId
-                                                cueScorePlayerName = result.name
-                                            }
-                                            CueScorePlayerLookupResult.NotFound -> {
-                                                cueScoreLookupMessage = context.getString(R.string.onboarding_cuescore_not_found)
-                                            }
-                                            CueScorePlayerLookupResult.Unavailable -> {
-                                                cueScoreLookupMessage = context.getString(R.string.onboarding_cuescore_lookup_failed)
-                                            }
-                                        }
-                                    } finally {
-                                        cueScoreLookupInProgress = false
+                                },
+                                label = { Text(stringResource(R.string.onboarding_cuescore_search_name)) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                                singleLine = true,
+                                enabled = !cueScoreLookupInProgress,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            FilledTonalButton(
+                                shape = BrixButtonShape,
+                                onClick = { searchPlayers() },
+                                enabled = cueScoreSearchQuery.trim().let { it.codePointCount(0, it.length) >= 2 } &&
+                                    !cueScoreLookupInProgress,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (cueScoreLookupInProgress) {
+                                            R.string.onboarding_cuescore_searching
+                                        } else {
+                                            R.string.onboarding_cuescore_search
+                                        },
+                                    ),
+                                )
+                            }
+                        }
+                        if (!cueScoreEditing) {
+                            verifiedCueScorePlayerId?.let { id ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CueScorePlayerRow(
+                                        CueScorePlayer(id, cueScorePlayerName, cueScorePlayerImageUrl, cueScoreCountryImageUrl, cueScoreCountryName),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    IconButton(onClick = { cueScoreEditing = true }) {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            contentDescription = stringResource(R.string.onboarding_cuescore_edit),
+                                        )
                                     }
                                 }
-                            },
-                            enabled = cueScorePlayerId.trim().toLongOrNull()?.let { it > 0 } == true &&
-                                !cueScoreLookupInProgress,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                stringResource(
-                                    if (cueScoreLookupInProgress) {
-                                        R.string.onboarding_cuescore_verifying
-                                    } else {
-                                        R.string.onboarding_cuescore_verify
-                                    },
-                                ),
-                            )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    QuickActionButton(
+                                        action = ButtonAction.CUESCORE_SCOREBOARD,
+                                        wide = false,
+                                        active = cueScoreExampleEnabled,
+                                        onClick = { cueScoreExampleEnabled = !cueScoreExampleEnabled },
+                                    )
+                                    Text(
+                                        stringResource(R.string.onboarding_cuescore_toggle_help),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            }
                         }
-                        cueScorePlayerName?.let { name ->
-                            StepText(stringResource(R.string.onboarding_cuescore_verified, name))
+                        cueScoreSearchResults?.let { players ->
+                            if (players.isEmpty() && cueScoreNextOffset == null) {
+                                StepText(stringResource(R.string.onboarding_cuescore_not_found))
+                            }
+                            players.forEach { player ->
+                                CueScorePlayerRow(
+                                    player,
+                                    modifier = Modifier.clickable(enabled = !cueScoreLookupInProgress) {
+                                        verifiedCueScorePlayerId = player.id
+                                        cueScorePlayerName = player.name
+                                        cueScorePlayerImageUrl = player.imageUrl
+                                        cueScoreCountryImageUrl = player.countryImageUrl
+                                        cueScoreCountryName = player.countryName
+                                        viewModel.rememberCueScorePlayer(player)
+                                        cueScoreEditing = false
+                                        cueScoreSearchResults = null
+                                        cueScoreNextOffset = null
+                                    },
+                                )
+                            }
+                        }
+                        cueScoreNextOffset?.let { offset ->
+                            TextButton(
+                                onClick = { searchPlayers(offset) },
+                                enabled = !cueScoreLookupInProgress,
+                                shape = BrixButtonShape,
+                            ) {
+                                Text(stringResource(R.string.onboarding_cuescore_more))
+                            }
                         }
                         cueScoreLookupMessage?.let { message ->
                             Text(message, color = MaterialTheme.colorScheme.error)
@@ -404,7 +571,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                 shape = BrixButtonShape,
                 onClick = { if (step == OnboardingStep.DONE) finish() else stepIndex++ },
                 enabled = step != OnboardingStep.CUESCORE ||
-                    verifiedCueScorePlayerId == cueScorePlayerId.trim(),
+                    verifiedCueScorePlayerId != null,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(

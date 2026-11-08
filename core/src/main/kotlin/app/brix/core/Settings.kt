@@ -690,6 +690,15 @@ data class SceneWidget(
 }
 
 @Serializable
+data class CueScorePlayer(
+    val id: String,
+    val name: String? = null,
+    val imageUrl: String? = null,
+    val countryImageUrl: String? = null,
+    val countryName: String? = null,
+)
+
+@Serializable
 data class AppSettings(
     /** Audio settings shared by all profiles. Previously each profile held a copy:
      *  users edited them in one place, then switching profiles changed the settings
@@ -723,6 +732,7 @@ data class AppSettings(
      * default values when writing to disk, making old and new files indistinguishable.
      */
     val onboardingDone: Boolean? = null,
+    val cueScorePlayer: CueScorePlayer? = null,
     val twitch: TwitchIntegration = TwitchIntegration(),
     val kick: KickIntegration = KickIntegration(),
     @Deprecated("Kept only for schema migration into overlays.")

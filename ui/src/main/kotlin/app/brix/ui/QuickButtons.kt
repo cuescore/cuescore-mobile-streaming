@@ -84,6 +84,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -157,6 +158,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTa
     }
 }
 
+@Composable
 fun ButtonAction.icon(active: Boolean = false): ImageVector = when (this) {
     ButtonAction.MUTE -> if (active) Icons.Filled.MicOff else Icons.Filled.Mic
     ButtonAction.TORCH -> if (active) Icons.Filled.FlashlightOn else Icons.Filled.FlashlightOff
@@ -175,7 +177,7 @@ fun ButtonAction.icon(active: Boolean = false): ImageVector = when (this) {
     ButtonAction.MIC -> if (active) Icons.Filled.SettingsVoice else Icons.Filled.KeyboardVoice
     ButtonAction.SCENE -> Icons.Filled.Layers
     ButtonAction.SNAPSHOT -> Icons.Filled.PhotoCamera
-    ButtonAction.CUESCORE_SCOREBOARD -> Icons.Filled.Layers
+    ButtonAction.CUESCORE_SCOREBOARD -> ImageVector.vectorResource(R.drawable.ic_cuescore_scoreboard)
 }
 
 @Composable
@@ -554,7 +556,7 @@ private fun Placeholder(
 }
 
 @Composable
-private fun QuickActionButton(
+internal fun QuickActionButton(
     action: ButtonAction,
     wide: Boolean,
     modifier: Modifier = Modifier,
@@ -590,11 +592,13 @@ private fun QuickActionButton(
 
     val isMuteActive = active && action == ButtonAction.MUTE
     val bg = when {
+        action == ButtonAction.CUESCORE_SCOREBOARD && !active -> Color(0xFF0A1B4D)
         isMuteActive -> MaterialTheme.colorScheme.error
         active -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.secondaryContainer
     }
     val iconTint = when {
+        action == ButtonAction.CUESCORE_SCOREBOARD -> Color.White
         isMuteActive -> MaterialTheme.colorScheme.onError
         active -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSecondaryContainer
@@ -623,6 +627,7 @@ private fun QuickActionButton(
             imageVector = action.icon(active),
             contentDescription = action.label(),
             tint = iconTint,
+            modifier = if (action == ButtonAction.CUESCORE_SCOREBOARD) Modifier.size(40.dp, 28.dp) else Modifier,
         )
     }
 }
