@@ -106,6 +106,7 @@ fun DevicePassportScreen(
 
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(
+                shape = BrixButtonShape,
                 enabled = !text.isNullOrEmpty(),
                 onClick = {
                     val body = text ?: return@FilledTonalButton

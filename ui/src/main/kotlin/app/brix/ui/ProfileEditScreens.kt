@@ -38,7 +38,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -171,7 +170,6 @@ fun StreamProfileEditScreen(
                 Text(
                     text = stringResource(R.string.profile_presets),
                     style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FontFamily.Monospace,
                 )
                 Spacer(Modifier.height(8.dp))
                 FlowRow(
@@ -221,7 +219,7 @@ fun StreamProfileEditScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 var showSavePresetDialog by remember { mutableStateOf(false) }
-                TextButton(onClick = { showSavePresetDialog = true }) {
+                TextButton(shape = BrixButtonShape, onClick = { showSavePresetDialog = true }) {
                     Text(stringResource(R.string.preset_save_as))
                 }
                 if (showSavePresetDialog) {
@@ -240,6 +238,7 @@ fun StreamProfileEditScreen(
                         },
                         confirmButton = {
                             TextButton(
+                                shape = BrixButtonShape,
                                 enabled = presetName.isNotBlank(),
                                 onClick = {
                                     viewModel.saveCustomPreset(
@@ -259,7 +258,7 @@ fun StreamProfileEditScreen(
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showSavePresetDialog = false }) {
+                            TextButton(shape = BrixButtonShape, onClick = { showSavePresetDialog = false }) {
                                 Text(stringResource(R.string.btn_cancel))
                             }
                         },
@@ -622,6 +621,7 @@ fun ServerProfileEditScreen(
                 // выглядела ровно как «Сохранить» на соседних экранах, и в
                 // спешке разницу давало только расположение.
                 Button(
+                    shape = BrixButtonShape,
                     onClick = { confirmDelete = true },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer,

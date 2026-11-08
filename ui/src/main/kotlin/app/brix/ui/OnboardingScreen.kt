@@ -49,7 +49,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -175,7 +174,6 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
             Text(
                 stringResource(R.string.onboarding_step, stepIndex + 1, OnboardingStep.entries.size),
                 style = MaterialTheme.typography.labelMedium,
-                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
@@ -183,7 +181,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                 step != OnboardingStep.WELCOME &&
                 step != OnboardingStep.CUESCORE
             ) {
-                TextButton(onClick = {
+                TextButton(shape = BrixButtonShape, onClick = {
                     viewModel.completeOnboarding(null, null, verifiedCueScorePlayerId)
                 }) {
                     Text(stringResource(R.string.onboarding_skip_all), maxLines = 1)
@@ -228,6 +226,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         FilledTonalButton(
+                            shape = BrixButtonShape,
                             onClick = {
                                 val playerId = cueScorePlayerId.trim()
                                 coroutineScope.launch {
@@ -286,6 +285,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                     }
                     if (!statuses.values.all { it }) {
                         Button(
+                            shape = BrixButtonShape,
                             onClick = { permissionLauncher.launch(ONBOARDING_PERMISSIONS) },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text(stringResource(R.string.onboarding_permissions_grant)) }
@@ -396,11 +396,12 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
         // выше, и «Назад» рядом подпрыгивал.
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             if (stepIndex > 0) {
-                OutlinedButton(onClick = { stepIndex-- }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(shape = BrixButtonShape, onClick = { stepIndex-- }, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.btn_back), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Button(
+                shape = BrixButtonShape,
                 onClick = { if (step == OnboardingStep.DONE) finish() else stepIndex++ },
                 enabled = step != OnboardingStep.CUESCORE ||
                     verifiedCueScorePlayerId == cueScorePlayerId.trim(),
@@ -501,7 +502,7 @@ private fun PresetTile(preset: StreamPreset, note: String?, selected: Boolean, o
     val scheme = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(4.dp),
         color = if (selected) scheme.primary.copy(alpha = 0.12f) else scheme.surfaceContainer,
         border = BorderStroke(
             if (selected) 1.5.dp else 0.5.dp,
@@ -558,7 +559,6 @@ private fun PermissionRow(permission: String, granted: Boolean) {
         )
         Text(
             if (granted) "✓" else "—",
-            fontFamily = FontFamily.Monospace,
             color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -613,6 +613,7 @@ private fun ImportCard(onImported: (SharedConfig) -> Unit) {
                 )
             }
             FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = {
                     val trimmed = link.trim()
                     val config = SettingsDeepLink.decodeAny(trimmed)

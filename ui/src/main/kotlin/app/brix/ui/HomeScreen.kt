@@ -53,6 +53,7 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
+                        shape = BrixButtonShape,
                         onClick = onStartStreaming,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -60,6 +61,7 @@ fun HomeScreen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedButton(
+                        shape = BrixButtonShape,
                         onClick = onOpenSettings,
                         modifier = Modifier.fillMaxWidth(),
                     ) {

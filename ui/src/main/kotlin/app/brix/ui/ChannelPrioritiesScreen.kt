@@ -21,7 +21,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.brix.core.ConnectionPriority
 import app.brix.core.defaultConnectionPriorities
@@ -124,7 +123,6 @@ private fun ChannelPriorityRow(
             Text(
                 text = channelDisplayName(channel.name),
                 style = MaterialTheme.typography.bodyLarge,
-                fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 color = if (channel.enabled) {
                     MaterialTheme.colorScheme.onSurface

@@ -113,6 +113,7 @@ fun ScenesScreen(
 
             Spacer(Modifier.height(4.dp))
             FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = { onEdit(null) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -255,6 +256,7 @@ fun SceneEditScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     FilledTonalButton(
+                        shape = BrixButtonShape,
                         onClick = { picker.launch(arrayOf("image/*")) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.scenes_image_pick)) }

@@ -288,13 +288,12 @@ private fun DeepLinkImportDialog(
                     Text(
                         text = "${server.name} — ${serverHostOf(server.baseUrl)}",
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(shape = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(4f)), onClick = {
                 onImport(config)
                 pendingLink.value = null
             }) {
@@ -302,7 +301,7 @@ private fun DeepLinkImportDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = { pendingLink.value = null }) {
+            TextButton(shape = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(4f)), onClick = { pendingLink.value = null }) {
                 Text(stringResource(R.string.btn_cancel))
             }
         },

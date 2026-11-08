@@ -5,6 +5,7 @@
          старте, который владелец видел и о котором писал (14.09 и 15.09). -->
     <style name="Theme.Brix" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_cuescore_logo</item>
         <item name="android:windowBackground">@color/ic_launcher_background</item>
     </style>
 </resources>

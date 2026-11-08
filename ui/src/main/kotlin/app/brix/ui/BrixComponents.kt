@@ -30,12 +30,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 
-private val BrixShape = RoundedCornerShape(16.dp)
+private val BrixShape = RoundedCornerShape(4.dp)
 
 /** Минимальная высота строки настроек. 48 dp — рекомендация Android по области
  *  нажатия; у нас строки были около 38 dp, и попасть в них на ходу тяжело
@@ -43,6 +42,8 @@ private val BrixShape = RoundedCornerShape(16.dp)
  *  выросли: там высоту задаёт содержимое, а не минимум. */
 private val ROW_MIN_HEIGHT = 48.dp
 private val BrixRowShape = RoundedCornerShape(8.dp)
+
+internal val BrixButtonShape = RoundedCornerShape(4.dp)
 
 /* Моноширинный шрифт остался там, где он работает: значения справа в строке,
  * подписи сегментов, рельса категорий, отчёты и коды. Названия настроек с
@@ -106,7 +107,6 @@ fun BrixNavRow(
             Text(
                 value,
                 style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.width(4.dp))
@@ -229,7 +229,6 @@ fun <T> BrixSegmentRow(
                     Text(
                         label,
                         style = MaterialTheme.typography.labelMedium,
-                        fontFamily = FontFamily.Monospace,
                         color = if (isSelected) {
                             MaterialTheme.colorScheme.onPrimary
                         } else {
@@ -287,6 +286,7 @@ fun BrixDialog(
                     val tight = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     if (dismissLabel != null) {
                         androidx.compose.material3.TextButton(
+                            shape = BrixButtonShape,
                             onClick = onDismiss,
                             contentPadding = tight,
                             modifier = Modifier.heightIn(min = 34.dp),
@@ -294,6 +294,7 @@ fun BrixDialog(
                         Spacer(Modifier.width(2.dp))
                     }
                     androidx.compose.material3.TextButton(
+                        shape = BrixButtonShape,
                         onClick = onConfirm,
                         contentPadding = tight,
                         modifier = Modifier.heightIn(min = 34.dp),

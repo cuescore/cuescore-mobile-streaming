@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.foundation.layout.Column
@@ -102,7 +103,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
 import app.brix.core.AppSettings
 import app.brix.core.WidgetKind
@@ -981,8 +981,16 @@ private fun ImmersiveStream(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight(),
+                    .fillMaxHeight()
+                    .background(Color.Black),
             ) {
+            // The preview buffer has the stream's aspect ratio; letting the
+            // SurfaceView fill a wider screen area made SurfaceFlinger stretch
+            // the picture (and browser-source overlays) horizontally.
+            val streamAspect = profile?.video
+                ?.takeIf { it.width > 0 && it.height > 0 }
+                ?.let { it.width.toFloat() / it.height }
+                ?: (16f / 9f)
             if (ready) {
                 // The factory lambda below runs once (Compose's AndroidView
                 // contract) and the touch listener it installs closes over
@@ -1131,7 +1139,7 @@ private fun ImmersiveStream(
                             })
                         }
                     },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.align(Alignment.Center).aspectRatio(streamAspect),
                 )
             } else {
                 Text(
@@ -1142,6 +1150,7 @@ private fun ImmersiveStream(
             }
 
             if (placementWidget != null) {
+                Box(modifier = Modifier.align(Alignment.Center).aspectRatio(streamAspect)) {
                 OverlayTuner(
                     posX = placementWidget.posX,
                     posY = placementWidget.posY,
@@ -1158,6 +1167,7 @@ private fun ImmersiveStream(
                         }
                     },
                 )
+                }
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -1173,7 +1183,7 @@ private fun ImmersiveStream(
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = onWidgetPlacementDone) {
+                    Button(shape = BrixButtonShape, onClick = onWidgetPlacementDone) {
                         Text(stringResource(R.string.btn_done))
                     }
                 }
@@ -1240,7 +1250,7 @@ private fun ImmersiveStream(
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { placementChat = false }) {
+                    Button(shape = BrixButtonShape, onClick = { placementChat = false }) {
                         Text(stringResource(R.string.btn_done))
                     }
                 }
@@ -1493,15 +1503,36 @@ private fun BrowserWidgetHost(
                 context.createConfigurationContext(webViewConfiguration),
                 context.theme,
             )
+            // Runs at document start (and again on page finish as a fallback) so
+            // the page's first layout already uses the stream-sized viewport.
+            // Switching it after load leaves CSS `vh` stuck at the phone's
+            // original viewport height, which distorts full-height layers.
             val viewportScript = """
                 (function() {
-                    var viewport = document.querySelector('meta[name="viewport"]');
-                    if (!viewport) {
-                        viewport = document.createElement('meta');
-                        viewport.name = 'viewport';
-                        document.head.appendChild(viewport);
+                    var content = 'width=$outputWidth,height=$outputHeight,initial-scale=1,maximum-scale=1,user-scalable=no';
+                    function apply() {
+                        var metas = document.querySelectorAll('meta[name="viewport"]');
+                        if (metas.length === 0) {
+                            var meta = document.createElement('meta');
+                            meta.name = 'viewport';
+                            (document.head || document.documentElement).appendChild(meta);
+                            metas = [meta];
+                        }
+                        for (var i = 0; i < metas.length; i++) {
+                            if (metas[i].content !== content) metas[i].content = content;
+                        }
                     }
-                    viewport.content = 'width=$outputWidth,height=$outputHeight,initial-scale=1,maximum-scale=1,user-scalable=no';
+                    apply();
+                    if (!window.__brixViewportObserver) {
+                        window.__brixViewportObserver = new MutationObserver(apply);
+                        window.__brixViewportObserver.observe(document.documentElement, {
+                            childList: true, subtree: true, attributes: true, attributeFilter: ['content'],
+                        });
+                        document.addEventListener('DOMContentLoaded', function() {
+                            apply();
+                            window.__brixViewportObserver.disconnect();
+                        });
+                    }
                 })();
             """.trimIndent()
             WebView(webViewContext).apply {
@@ -1516,6 +1547,9 @@ private fun BrowserWidgetHost(
                 // Software rendering is required for WebView.draw() to capture
                 // the page into the bitmap frames sent to the video overlay.
                 setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+                if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                    androidx.webkit.WebViewCompat.addDocumentStartJavaScript(this, viewportScript, setOf("*"))
+                }
                 webViewClient = object : android.webkit.WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String?) {
                         view.evaluateJavascript(viewportScript, null)
@@ -1967,9 +2001,9 @@ private fun HudCard(
     Column(
         modifier = modifier
             .widthIn(max = 520.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f), RoundedCornerShape(10.dp))
-            .border(0.5.dp, border, RoundedCornerShape(10.dp))
-            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+            .border(0.5.dp, border, RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(4.dp))
             .clickable(onClick = onToggleExpand)
             .padding(horizontal = 8.dp, vertical = 5.dp),
     ) {

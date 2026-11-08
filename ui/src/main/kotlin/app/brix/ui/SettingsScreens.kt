@@ -42,7 +42,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -398,7 +397,7 @@ internal fun SettingsEditTopBar(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onCancel) { Text(cancelLabel) }
+        TextButton(shape = BrixButtonShape, onClick = onCancel) { Text(cancelLabel) }
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
@@ -407,7 +406,7 @@ internal fun SettingsEditTopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
         )
-        TextButton(onClick = onSave, enabled = saveEnabled) { Text(saveLabel) }
+        TextButton(shape = BrixButtonShape, onClick = onSave, enabled = saveEnabled) { Text(saveLabel) }
     }
 }
 
@@ -991,6 +990,7 @@ fun StreamProfilesScreen(
             }
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = { onEdit(null) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1003,6 +1003,7 @@ fun StreamProfilesScreen(
                 var twitchResult by remember { mutableStateOf<Boolean?>(null) }
                 Spacer(Modifier.height(8.dp))
                 FilledTonalButton(
+                    shape = BrixButtonShape,
                     onClick = { scope.launch { twitchResult = viewModel.addTwitchServer() } },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1023,6 +1024,7 @@ fun StreamProfilesScreen(
                 var kickResult by remember { mutableStateOf<Boolean?>(null) }
                 Spacer(Modifier.height(8.dp))
                 FilledTonalButton(
+                    shape = BrixButtonShape,
                     onClick = { kickScope.launch { kickResult = viewModel.addKickServer() } },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1105,6 +1107,7 @@ fun ServerProfilesScreen(
             }
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = { onEdit(null) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1216,6 +1219,7 @@ fun DiagnosticsScreen(
             }
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = {
                     // Export does blocking subprocess + file I/O — never on the
                     // UI thread (H10).
@@ -1607,6 +1611,7 @@ fun ConfigTransferScreen(
             }
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = { askIncludeSecrets = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1629,12 +1634,12 @@ fun ConfigTransferScreen(
                     title = { Text(stringResource(R.string.dialog_share_secrets_title)) },
                     text = { Text(stringResource(R.string.dialog_share_secrets_text)) },
                     confirmButton = {
-                        TextButton(onClick = { share(false) }) {
+                        TextButton(shape = BrixButtonShape, onClick = { share(false) }) {
                             Text(stringResource(R.string.dialog_share_without_keys))
                         }
                     },
                     dismissButton = {
-                        TextButton(onClick = { share(true) }) {
+                        TextButton(shape = BrixButtonShape, onClick = { share(true) }) {
                             Text(stringResource(R.string.dialog_share_with_keys))
                         }
                     },
@@ -1665,6 +1670,7 @@ fun ConfigTransferScreen(
                     Spacer(Modifier.height(8.dp))
                     Row(modifier = Modifier.fillMaxWidth()) {
                         TextButton(
+                            shape = BrixButtonShape,
                             onClick = {
                                 val clipboard = context.getSystemService(
                                     android.content.ClipboardManager::class.java,
@@ -1681,6 +1687,7 @@ fun ConfigTransferScreen(
                         }
                         Spacer(Modifier.width(8.dp))
                         FilledTonalButton(
+                            shape = BrixButtonShape,
                             onClick = {
                                 val config = app.brix.core.SettingsDeepLink.decodeAny(linkText.trim())
                                 if (config == null) {
@@ -1714,7 +1721,7 @@ fun ConfigTransferScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(shape = BrixButtonShape, onClick = {
                     viewModel.importSharedConfig(toImport)
                     pendingImport = null
                     linkText = ""
@@ -1723,7 +1730,7 @@ fun ConfigTransferScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingImport = null }) {
+                TextButton(shape = BrixButtonShape, onClick = { pendingImport = null }) {
                     Text(stringResource(R.string.btn_cancel))
                 }
             },
@@ -1818,7 +1825,6 @@ internal fun ProfileRow(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                fontFamily = FontFamily.Monospace,
                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
             Text(
@@ -1898,6 +1904,7 @@ fun WidgetsSettingsScreen(
                 Spacer(Modifier.height(8.dp))
             }
             FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = { pickKind = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -2013,7 +2020,6 @@ private fun WidgetRow(
             Text(
                 text = widget.displayTitle().ifBlank { stringResource(widgetKindLabel(widget.kind)) },
                 style = MaterialTheme.typography.titleMedium,
-                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -2219,7 +2225,7 @@ fun WidgetEditScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(Modifier.height(8.dp))
-                        FilledTonalButton(onClick = { pickImage.launch(arrayOf("image/*")) }) {
+                        FilledTonalButton(shape = BrixButtonShape, onClick = { pickImage.launch(arrayOf("image/*")) }) {
                             Text(stringResource(R.string.btn_pick_file))
                         }
                     }
@@ -2260,7 +2266,6 @@ fun WidgetEditScreen(
                     Text(
                         text = stringResource(R.string.overlay_audio_title),
                         style = MaterialTheme.typography.titleSmall,
-                        fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -2289,7 +2294,6 @@ fun WidgetEditScreen(
                         Text(
                             text = stringResource(R.string.overlay_caption_title),
                             style = MaterialTheme.typography.titleSmall,
-                            fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Spacer(Modifier.height(4.dp))
@@ -2369,7 +2373,7 @@ private fun MicDevicePickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
+            TextButton(shape = BrixButtonShape, onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         },
     )
 }

@@ -62,7 +62,7 @@ fun IntegrationsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifi
                             twitch.loggedIn -> stringResource(R.string.twitch_logged_in, twitch.login)
                             else -> stringResource(R.string.twitch_logged_out)
                         }
-                        Text(status, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+                        Text(status, style = MaterialTheme.typography.bodyMedium)
                         if (twitch.needsRelogin()) {
                             Text(
                                 stringResource(R.string.twitch_relogin_needed),
@@ -82,6 +82,7 @@ fun IntegrationsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifi
                                 )
                                 Text(state.verificationUri, style = MaterialTheme.typography.bodySmall)
                                 Button(
+                                    shape = BrixButtonShape,
                                     onClick = {
                                         runCatching {
                                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(state.verificationUri)))
@@ -89,7 +90,7 @@ fun IntegrationsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifi
                                     },
                                     modifier = Modifier.fillMaxWidth(),
                                 ) { Text(stringResource(R.string.twitch_open_browser)) }
-                                OutlinedButton(onClick = session::cancelLogin, modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(shape = BrixButtonShape, onClick = session::cancelLogin, modifier = Modifier.fillMaxWidth()) {
                                     Text(stringResource(R.string.btn_cancel))
                                 }
                             }
@@ -104,12 +105,12 @@ fun IntegrationsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifi
                                 }
                                 if (session.configured) {
                                     if (!twitch.loggedIn || twitch.needsRelogin()) {
-                                        Button(onClick = session::startLogin, modifier = Modifier.fillMaxWidth()) {
+                                        Button(shape = BrixButtonShape, onClick = session::startLogin, modifier = Modifier.fillMaxWidth()) {
                                             Text(stringResource(R.string.twitch_login))
                                         }
                                     }
                                     if (twitch.loggedIn) {
-                                        OutlinedButton(onClick = session::logout, modifier = Modifier.fillMaxWidth()) {
+                                        OutlinedButton(shape = BrixButtonShape, onClick = session::logout, modifier = Modifier.fillMaxWidth()) {
                                             Text(stringResource(R.string.twitch_logout))
                                         }
                                     }
@@ -147,6 +148,7 @@ fun IntegrationsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifi
             if (twitch.loggedIn && twitch.grantedScopes.contains(app.brix.core.TwitchIntegration.SCOPE_STREAM_KEY)) {
                 item {
                     FilledTonalButton(
+                        shape = BrixButtonShape,
                         onClick = { scope.launch { serverResult = viewModel.addTwitchServer() } },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.twitch_add_server)) }
@@ -222,7 +224,6 @@ private fun KickCard(viewModel: SettingsViewModel) {
                     stringResource(R.string.twitch_logged_out)
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
             )
             if (kick.needsRelogin()) {
                 Text(
@@ -235,10 +236,11 @@ private fun KickCard(viewModel: SettingsViewModel) {
                 is KickLoginState.WaitingForBrowser -> {
                     Text(stringResource(R.string.kick_waiting_browser), style = MaterialTheme.typography.bodySmall)
                     Button(
+                        shape = BrixButtonShape,
                         onClick = { openUrl(context, state.url) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.twitch_open_browser)) }
-                    OutlinedButton(onClick = session::cancelLogin, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(shape = BrixButtonShape, onClick = session::cancelLogin, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.btn_cancel))
                     }
                 }
@@ -252,6 +254,7 @@ private fun KickCard(viewModel: SettingsViewModel) {
                     }
                     if (kick.configured && (!kick.loggedIn || kick.needsRelogin())) {
                         Button(
+                            shape = BrixButtonShape,
                             onClick = {
                                 viewModel.flush()
                                 session.startLogin(successHtml)
@@ -260,7 +263,7 @@ private fun KickCard(viewModel: SettingsViewModel) {
                         ) { Text(stringResource(R.string.kick_login)) }
                     }
                     if (kick.loggedIn) {
-                        OutlinedButton(onClick = session::logout, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(shape = BrixButtonShape, onClick = session::logout, modifier = Modifier.fillMaxWidth()) {
                             Text(stringResource(R.string.twitch_logout))
                         }
                     }
@@ -282,6 +285,7 @@ private fun KickCard(viewModel: SettingsViewModel) {
     }
     if (kick.loggedIn && app.brix.core.KickIntegration.SCOPE_STREAM_KEY in kick.grantedScopes) {
         FilledTonalButton(
+            shape = BrixButtonShape,
             onClick = { scope.launch { serverResult = viewModel.addKickServer() } },
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.kick_add_server)) }

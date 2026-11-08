@@ -84,7 +84,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -274,6 +273,7 @@ fun QuickButtonGrid(
     ) {
         if (editing) {
             androidx.compose.material3.FilledTonalButton(
+                shape = BrixButtonShape,
                 onClick = { onEditingChange(false); menu = null },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
@@ -852,7 +852,7 @@ private fun SlotMenu(
 ) {
     Dialog(onDismissRequest = onClose) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(4.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 6.dp,
         ) {
@@ -936,9 +936,9 @@ private fun SlotMenu(
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = onClose) { Text(stringResource(R.string.btn_cancel)) }
+                    TextButton(shape = BrixButtonShape, onClick = onClose) { Text(stringResource(R.string.btn_cancel)) }
                     if (existing != null && onRemove != null) {
-                        TextButton(onClick = onRemove) {
+                        TextButton(shape = BrixButtonShape, onClick = onRemove) {
                             Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
