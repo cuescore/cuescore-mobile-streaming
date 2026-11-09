@@ -177,6 +177,7 @@ fun ButtonAction.icon(active: Boolean = false): ImageVector = when (this) {
     ButtonAction.SCENE -> Icons.Filled.Layers
     ButtonAction.SNAPSHOT -> Icons.Filled.PhotoCamera
     ButtonAction.CUESCORE_SCOREBOARD -> ImageVector.vectorResource(R.drawable.ic_cuescore_scoreboard)
+    ButtonAction.CUESCORE_TABLE_SCOREBOARD -> ImageVector.vectorResource(R.drawable.ic_cuescore_table_scoreboard)
 }
 
 @Composable
@@ -199,6 +200,7 @@ fun ButtonAction.label(): String = stringResource(
         ButtonAction.SCENE -> R.string.button_scene
         ButtonAction.SNAPSHOT -> R.string.button_snapshot
         ButtonAction.CUESCORE_SCOREBOARD -> R.string.button_cuescore_scoreboard
+        ButtonAction.CUESCORE_TABLE_SCOREBOARD -> R.string.button_cuescore_table_scoreboard
     },
 )
 
@@ -596,7 +598,7 @@ internal fun QuickActionButton(
             imageVector = action.icon(active),
             contentDescription = action.label(),
             tint = iconTint,
-            modifier = if (action == ButtonAction.CUESCORE_SCOREBOARD) Modifier.size(40.dp, 28.dp) else Modifier,
+            modifier = if (action == ButtonAction.CUESCORE_SCOREBOARD || action == ButtonAction.CUESCORE_TABLE_SCOREBOARD) Modifier.size(40.dp, 28.dp) else Modifier,
         )
     }
 }

@@ -307,6 +307,10 @@ fun StreamScreen(
                             it.enabled
                     },
                     onToggleCueScoreWidget = { settingsViewModel.toggleCueScoreWidget() },
+                    cueScoreTableWidgetEnabled = settings.widgets.any {
+                        it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url, true) && it.enabled
+                    },
+                    onToggleCueScoreTableWidget = { settingsViewModel.toggleCueScoreWidget(table = true) },
                     autoHideHud = settings.appearance.autoHideHud,
                     hud = settings.hud,
                     chat = settings.chat,
@@ -397,6 +401,8 @@ private fun ImmersiveStream(
     quickButtons: QuickButtonConfig,
     cueScoreWidgetEnabled: Boolean,
     onToggleCueScoreWidget: () -> Unit,
+    cueScoreTableWidgetEnabled: Boolean,
+    onToggleCueScoreTableWidget: () -> Unit,
     autoHideHud: Boolean,
     hud: app.brix.core.HudConfig,
     chat: app.brix.core.ChatSettings,
@@ -701,6 +707,7 @@ private fun ImmersiveStream(
         if (hudPinned) add(ButtonAction.INFO)
         if (powerSaveOn) add(ButtonAction.POWER_SAVE)
         if (cueScoreWidgetEnabled) add(ButtonAction.CUESCORE_SCOREBOARD)
+        if (cueScoreTableWidgetEnabled) add(ButtonAction.CUESCORE_TABLE_SCOREBOARD)
     }
     // Feedback for Snapshot: otherwise the button is silent and users cannot
     // tell whether anything was captured. The message clears itself.
@@ -893,6 +900,7 @@ private fun ImmersiveStream(
             ButtonAction.MASCOT -> error("Legacy mascot action is not available")
             ButtonAction.POWER_SAVE -> { powerSaveOn = !powerSaveOn }
             ButtonAction.CUESCORE_SCOREBOARD -> onToggleCueScoreWidget()
+            ButtonAction.CUESCORE_TABLE_SCOREBOARD -> onToggleCueScoreTableWidget()
             // Capture from the GL chain: this is a STREAM frame with overlays
             // and effects, exactly what viewers see. A separate camera photo
             // would show a different picture and confuse investigations of

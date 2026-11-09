@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import app.brix.core.Ids
 import app.brix.core.CueScorePlayer
+import app.brix.core.CueScoreTable
 import app.brix.core.ButtonAction
 import app.brix.core.ServerProfile
 import app.brix.core.ServerType
@@ -83,7 +85,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ExecutionException
 
-private enum class OnboardingStep { WELCOME, CUESCORE, PERMISSIONS, SERVER, QUALITY, DONE }
+private enum class OnboardingStep { WELCOME, CUESCORE, TABLE, PERMISSIONS, SERVER, QUALITY, DONE }
 
 @Composable
 private fun CueScorePlayerRow(player: CueScorePlayer, modifier: Modifier = Modifier) {
@@ -216,7 +218,68 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
     var cueScoreSearchResults by remember { mutableStateOf<List<CueScorePlayer>?>(null) }
     var cueScoreNextOffset by remember { mutableStateOf<Int?>(null) }
     var cueScoreExampleEnabled by rememberSaveable { mutableStateOf(false) }
+    val rememberedTable = remember { settings.cueScoreTable }
+    var selectedTableId by rememberSaveable { mutableStateOf(rememberedTable?.id) }
+    var selectedTableName by rememberSaveable { mutableStateOf(rememberedTable?.name) }
+    var selectedVenueId by rememberSaveable { mutableStateOf(rememberedTable?.venueId) }
+    var selectedVenueName by rememberSaveable { mutableStateOf(rememberedTable?.venueName) }
+    var tableEditing by rememberSaveable { mutableStateOf(rememberedTable == null) }
+    var venueQuery by rememberSaveable { mutableStateOf("") }
+    var venueResults by remember { mutableStateOf<List<CueScoreVenue>?>(null) }
+    var venueNextOffset by remember { mutableStateOf<Int?>(null) }
+    var tables by remember { mutableStateOf<List<CueScoreTable>?>(null) }
+    var venueLoading by remember { mutableStateOf(false) }
+    var venueMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var tableExampleEnabled by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    fun searchVenues(offset: Int = 0) {
+        val query = venueQuery.trim()
+        coroutineScope.launch {
+            venueLoading = true
+            venueMessage = null
+            if (offset == 0) {
+                venueResults = null
+                venueNextOffset = null
+                tables = null
+            }
+            try {
+                val page = viewModel.searchCueScoreVenues(query, offset)
+                if (page == null) {
+                    venueMessage = context.getString(R.string.onboarding_table_search_failed)
+                } else {
+                    venueResults = if (offset == 0) page.venues else {
+                        (venueResults.orEmpty() + page.venues).distinctBy { it.id }
+                    }
+                    venueNextOffset = page.nextOffset
+                }
+            } finally {
+                venueLoading = false
+            }
+        }
+    }
+
+    fun loadTables(venue: CueScoreVenue) {
+        coroutineScope.launch {
+            venueLoading = true
+            venueMessage = null
+            tables = null
+            try {
+                val found = viewModel.lookupCueScoreTables(venue)
+                if (found == null) {
+                    venueMessage = context.getString(R.string.onboarding_table_lookup_failed)
+                } else {
+                    selectedVenueId = venue.id
+                    selectedVenueName = venue.name
+                    tables = found
+                    venueResults = null
+                    venueNextOffset = null
+                }
+            } finally {
+                venueLoading = false
+            }
+        }
+    }
 
     fun searchPlayers(offset: Int = 0) {
         val query = cueScoreSearchQuery.trim()
@@ -283,6 +346,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
             server,
             defaultStreamPresets[presetIndex],
             verifiedCueScorePlayerId,
+            selectedTableId,
         )
     }
 
@@ -308,9 +372,10 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
             if (step != OnboardingStep.DONE &&
                 step != OnboardingStep.WELCOME &&
                 step != OnboardingStep.CUESCORE
+                && step != OnboardingStep.TABLE
             ) {
                 TextButton(shape = BrixButtonShape, onClick = {
-                    viewModel.completeOnboarding(null, null, verifiedCueScorePlayerId)
+                    viewModel.completeOnboarding(null, null, verifiedCueScorePlayerId, selectedTableId)
                 }) {
                     Text(stringResource(R.string.onboarding_skip_all), maxLines = 1)
                 }
@@ -354,7 +419,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                                 enabled = !cueScoreLookupInProgress,
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            FilledTonalButton(
+                            Button(
                                 shape = BrixButtonShape,
                                 onClick = { searchPlayers() },
                                 enabled = cueScoreSearchQuery.trim().let { it.codePointCount(0, it.length) >= 2 } &&
@@ -385,22 +450,6 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                                             contentDescription = stringResource(R.string.onboarding_cuescore_edit),
                                         )
                                     }
-                                }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    QuickActionButton(
-                                        action = ButtonAction.CUESCORE_SCOREBOARD,
-                                        wide = false,
-                                        active = cueScoreExampleEnabled,
-                                        onClick = { cueScoreExampleEnabled = !cueScoreExampleEnabled },
-                                    )
-                                    Text(
-                                        stringResource(R.string.onboarding_cuescore_toggle_help),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.weight(1f),
-                                    )
                                 }
                             }
                         }
@@ -436,6 +485,138 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                         }
                         cueScoreLookupMessage?.let { message ->
                             Text(message, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    if (!cueScoreEditing && verifiedCueScorePlayerId != null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            QuickActionButton(
+                                action = ButtonAction.CUESCORE_SCOREBOARD,
+                                wide = false,
+                                active = cueScoreExampleEnabled,
+                                onClick = { cueScoreExampleEnabled = !cueScoreExampleEnabled },
+                            )
+                            Text(
+                                stringResource(R.string.onboarding_cuescore_toggle_help),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+
+                OnboardingStep.TABLE -> {
+                    StepTitle(stringResource(R.string.onboarding_table_title))
+                    StepText(stringResource(R.string.onboarding_table_text))
+                    BrixCard {
+                        if (tableEditing) {
+                            OutlinedTextField(
+                                value = venueQuery,
+                                onValueChange = {
+                                    venueQuery = it
+                                    venueResults = null
+                                    venueNextOffset = null
+                                    tables = null
+                                    venueMessage = null
+                                },
+                                label = { Text(stringResource(R.string.onboarding_table_venue_name)) },
+                                singleLine = true,
+                                enabled = !venueLoading,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Button(
+                                shape = BrixButtonShape,
+                                onClick = { searchVenues() },
+                                enabled = !venueLoading && venueQuery.trim().let { it.codePointCount(0, it.length) >= 2 },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(if (venueLoading) R.string.onboarding_cuescore_searching else R.string.onboarding_table_search))
+                            }
+                            venueResults?.let { venues ->
+                                if (venues.isEmpty() && venueNextOffset == null) {
+                                    StepText(stringResource(R.string.onboarding_table_no_venues))
+                                }
+                                venues.forEach { venue ->
+                                    Column(
+                                        Modifier.fillMaxWidth().clickable(enabled = !venueLoading) { loadTables(venue) }
+                                            .padding(vertical = 8.dp),
+                                    ) {
+                                        Text(venue.name, style = MaterialTheme.typography.titleMedium)
+                                        venue.address?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                                    }
+                                }
+                            }
+                            venueNextOffset?.let { offset ->
+                                TextButton(onClick = { searchVenues(offset) }, enabled = !venueLoading, shape = BrixButtonShape) {
+                                    Text(stringResource(R.string.onboarding_table_more_venues))
+                                }
+                            }
+                            tables?.let { choices ->
+                                Text(selectedVenueName.orEmpty(), style = MaterialTheme.typography.titleMedium)
+                                if (choices.isEmpty()) StepText(stringResource(R.string.onboarding_table_no_tables))
+                                else Text(stringResource(R.string.onboarding_table_select), style = MaterialTheme.typography.titleMedium)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    choices.forEach { table ->
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
+                                            modifier = Modifier.heightIn(min = 50.dp).clickable {
+                                                selectedTableId = table.id
+                                                selectedTableName = table.name
+                                                selectedVenueId = table.venueId
+                                                selectedVenueName = table.venueName
+                                                viewModel.rememberCueScoreTable(table)
+                                                tableEditing = false
+                                                tables = null
+                                                venueMessage = null
+                                            },
+                                        ) {
+                                            Box(Modifier.padding(16.dp), contentAlignment = Alignment.Center) { Text(table.name) }
+                                        }
+                                    }
+                                }
+                            }
+                            venueMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(selectedVenueName.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        stringResource(R.string.onboarding_table_selected_name, selectedTableName.orEmpty()),
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
+                                }
+                                IconButton(onClick = { tableEditing = true }) {
+                                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.onboarding_table_edit))
+                                }
+                            }
+                        }
+                    }
+                    if (!tableEditing && selectedTableId != null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            QuickActionButton(
+                                action = ButtonAction.CUESCORE_TABLE_SCOREBOARD,
+                                wide = false,
+                                active = tableExampleEnabled,
+                                onClick = { tableExampleEnabled = !tableExampleEnabled },
+                            )
+                            Text(
+                                stringResource(R.string.onboarding_table_toggle_help),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
                         }
                     }
                 }
@@ -568,8 +749,6 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
             Button(
                 shape = BrixButtonShape,
                 onClick = { if (step == OnboardingStep.DONE) finish() else stepIndex++ },
-                enabled = step != OnboardingStep.CUESCORE ||
-                    verifiedCueScorePlayerId != null,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
@@ -577,6 +756,8 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                         when {
                             step == OnboardingStep.DONE -> R.string.onboarding_start
                             step == OnboardingStep.SERVER && !serverFilled -> R.string.onboarding_skip_step
+                            step == OnboardingStep.CUESCORE && verifiedCueScorePlayerId == null -> R.string.onboarding_skip_step
+                            step == OnboardingStep.TABLE && selectedTableId == null -> R.string.onboarding_skip_step
                             else -> R.string.btn_next
                         },
                     ),
@@ -597,7 +778,7 @@ fun OnboardingScreen(viewModel: SettingsViewModel) {
                 pendingImport = null
                 // Imported settings already contain server and quality;
                 // later steps would overwrite them, so finish the wizard here.
-                viewModel.completeOnboardingWithImport(config, verifiedCueScorePlayerId)
+                viewModel.completeOnboardingWithImport(config, verifiedCueScorePlayerId, selectedTableId)
             },
         ) {
             StepText(

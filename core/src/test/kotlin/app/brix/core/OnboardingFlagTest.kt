@@ -68,4 +68,15 @@ class OnboardingFlagTest {
 
         assertNull(old.cueScorePlayer)
     }
+
+    @Test
+    fun `player and table selections survive restarting the guide independently`() {
+        val player = CueScorePlayer("12345", "Test Player")
+        val table = CueScoreTable("456", "1", "123", "Test venue")
+        val saved = roundTrip(defaultAppSettings().copy(cueScorePlayer = player, cueScoreTable = table))
+        assertEquals(player, saved.cueScorePlayer)
+        assertEquals(table, saved.cueScoreTable)
+        assertEquals(table, roundTrip(saved.copy(cueScorePlayer = null)).cueScoreTable)
+        assertEquals(player, roundTrip(saved.copy(cueScoreTable = null)).cueScorePlayer)
+    }
 }

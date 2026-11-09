@@ -9,6 +9,7 @@ import app.brix.core.withoutMascot
 import app.brix.core.ConnectionPriority
 import app.brix.core.AppSettings
 import app.brix.core.CueScorePlayer
+import app.brix.core.CueScoreTable
 import app.brix.core.ButtonAction
 import app.brix.core.Ids
 import app.brix.core.QuickButtonColumn
@@ -56,13 +57,16 @@ import kotlinx.coroutines.launch
 
 internal const val CUESCORE_SCOREBOARD_URL_PREFIX =
     "https://cuescore.com/scoreboard/stream/?playerId="
-private const val LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX =
+internal const val CUESCORE_TABLE_SCOREBOARD_URL_PREFIX =
     "https://cuescore.com/scoreboard/stream/?tableId="
 
 internal sealed interface CueScorePlayerSearchResult {
     data class Found(val players: List<CueScorePlayer>, val nextOffset: Int?) : CueScorePlayerSearchResult
     data object Unavailable : CueScorePlayerSearchResult
 }
+
+internal data class CueScoreVenue(val id: String, val name: String, val address: String?)
+internal data class CueScoreVenuePage(val venues: List<CueScoreVenue>, val nextOffset: Int?)
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SettingsStore.create(application)
@@ -359,10 +363,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         persist()
     }
 
-    fun toggleCueScoreWidget() {
+    fun toggleCueScoreWidget(table: Boolean = false) {
         val current = _settings.value
         val widget = current.widgets.firstOrNull {
-            it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url)
+            it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url, table)
         } ?: return
         val enabled = !widget.enabled
         _settings.value = current.copy(
@@ -386,20 +390,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val original = _settings.value
         val current = original.copy(
             widgets = original.widgets.map { widget ->
-                if (widget.kind == WidgetKind.WEB && widget.url.startsWith(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX)) {
-                    widget.copy(
-                        url = CUESCORE_SCOREBOARD_URL_PREFIX +
-                            widget.url.removePrefix(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX),
-                    )
+                if (widget.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(widget.url)) {
+                    widget.copy(name = "Player scoreboard overlay")
+                } else if (widget.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(widget.url, true)) {
+                    widget.copy(name = "Table scoreboard overlay")
                 } else {
                     widget
                 }
             },
         )
-        val hasScoreboard = current.widgets.any {
-            it.kind == WidgetKind.WEB && it.url.startsWith(CUESCORE_SCOREBOARD_URL_PREFIX)
+        var updated = current
+        for (table in listOf(false, true)) {
+            if (current.widgets.any { it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url, table) }) {
+                updated = updated.withCueScoreQuickButton(
+                    if (table) ButtonAction.CUESCORE_TABLE_SCOREBOARD else ButtonAction.CUESCORE_SCOREBOARD,
+                )
+            }
         }
-        val updated = if (hasScoreboard) current.withCueScoreQuickButton() else current
         if (updated != original) {
             _settings.value = updated
             persist()
@@ -451,6 +458,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         server: ServerProfile?,
         preset: StreamPreset?,
         cueScorePlayerId: String? = null,
+        cueScoreTableId: String? = null,
     ) {
         val s = _settings.value
         val servers = if (server == null) {
@@ -483,7 +491,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             appearance = appearance,
             onboardingDone = true,
         )
-        _settings.value = cueScorePlayerId?.let { completed.withCueScoreWidget(it) } ?: completed
+        _settings.value = completed.withCueScoreOverlays(cueScorePlayerId, cueScoreTableId)
         persist()
     }
 
@@ -495,7 +503,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             .filter { it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url) }
             .mapNotNull {
                 it.url.removePrefix(CUESCORE_SCOREBOARD_URL_PREFIX)
-                    .removePrefix(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX)
                     .substringBefore('&').toLongOrNull()?.takeIf { id -> id > 0 }
             }
             .firstOrNull() ?: return null
@@ -505,6 +512,41 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     internal fun rememberCueScorePlayer(player: CueScorePlayer) {
         _settings.value = _settings.value.copy(cueScorePlayer = player)
         persist()
+    }
+
+    internal fun rememberCueScoreTable(table: CueScoreTable) {
+        _settings.value = _settings.value.copy(cueScoreTable = table)
+        persist()
+    }
+
+    internal suspend fun searchCueScoreVenues(query: String, offset: Int = 0): CueScoreVenuePage? =
+        requestCueScore("venue/search/?q=${URLEncoder.encode(query.trim(), "UTF-8")}&limit=25&offset=$offset") {
+            parseCueScoreVenueSearchResponse(it, offset)
+        }
+
+    internal suspend fun lookupCueScoreTables(venue: CueScoreVenue): List<CueScoreTable>? =
+        requestCueScore("venue/?id=${venue.id}") { parseCueScoreTablesResponse(it, venue.id) }
+
+    private suspend fun <T> requestCueScore(path: String, parse: (String) -> T): T? = withContext(Dispatchers.IO) {
+        val connection = URL("https://api.cuescore.com/$path").openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                Log.w("CueScoreSearch", "Venue request failed with HTTP $status")
+                return@withContext null
+            }
+            parse(connection.inputStream.bufferedReader().use { it.readText() })
+        } catch (e: IOException) {
+            Log.w("CueScoreSearch", "Venue request failed", e)
+            null
+        } catch (e: JSONException) {
+            Log.w("CueScoreSearch", "Invalid venue response", e)
+            null
+        } finally {
+            connection.disconnect()
+        }
     }
 
     internal suspend fun searchCueScorePlayers(query: String, offset: Int = 0): CueScorePlayerSearchResult = withContext(Dispatchers.IO) {
@@ -552,6 +594,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun completeOnboardingWithImport(
         config: app.brix.core.SharedConfig,
         cueScorePlayerId: String? = null,
+        cueScoreTableId: String? = null,
     ) {
         val s = _settings.value
         val activeId = (config.serverProfiles.firstOrNull { it.enabled } ?: config.serverProfiles.firstOrNull())?.id
@@ -564,68 +607,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             quickButtons = (config.quickButtons ?: s.quickButtons).withoutMascot(),
             onboardingDone = true,
         )
-        _settings.value = cueScorePlayerId?.let { completed.withCueScoreWidget(it) } ?: completed
+        _settings.value = completed.withCueScoreOverlays(cueScorePlayerId, cueScoreTableId)
         persist()
-    }
-
-    private fun AppSettings.withCueScoreWidget(playerId: String): AppSettings {
-        val numericId = playerId.toLongOrNull()?.takeIf { it > 0 } ?: return this
-        val scoreboardUrl = "$CUESCORE_SCOREBOARD_URL_PREFIX$numericId"
-        val existing = widgets.firstOrNull {
-            it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url)
-        }
-        val widget = SceneWidget(
-            id = existing?.id ?: Ids.newId(),
-            kind = WidgetKind.WEB,
-            name = "CueScore scoreboard",
-            enabled = true,
-            posX = 0.5f,
-            posY = 0.5f,
-            width = 1f,
-            height = 1f,
-            url = scoreboardUrl,
-        )
-        val updatedWidgets = if (existing == null) widgets + widget else {
-            widgets.map { if (it.id == existing.id) widget else it }
-        }
-
-        return copy(
-            widgets = updatedWidgets,
-            scenes = scenes.map { scene ->
-                if (scene.id == selectedSceneId && widget.id !in scene.widgetIds) {
-                    scene.copy(widgetIds = scene.widgetIds + widget.id)
-                } else {
-                    scene
-                }
-            },
-        ).withCueScoreQuickButton()
-    }
-
-    private fun AppSettings.withCueScoreQuickButton(): AppSettings {
-        if (ButtonAction.CUESCORE_SCOREBOARD in quickButtons.slots.map { it.action }) return this
-        val occupiedCells = quickButtons.slots.flatMap { slot ->
-            if (slot.width == QuickButtonWidth.LARGE) {
-                listOf(
-                    slot.rowIndex to QuickButtonColumn.LEFT,
-                    slot.rowIndex to QuickButtonColumn.RIGHT,
-                )
-            } else {
-                listOfNotNull(slot.columnPosition?.let { slot.rowIndex to it })
-            }
-        }.toSet()
-        val freeCell = (0..4).asSequence().flatMap { row ->
-            sequenceOf(QuickButtonColumn.LEFT, QuickButtonColumn.RIGHT).map { column -> row to column }
-        }.firstOrNull { it !in occupiedCells } ?: return this
-        return copy(
-            quickButtons = quickButtons.copy(
-                slots = quickButtons.slots + QuickButtonSlot(
-                    ButtonAction.CUESCORE_SCOREBOARD,
-                    QuickButtonWidth.SMALL,
-                    freeCell.first,
-                    freeCell.second,
-                ),
-            ),
-        )
     }
 
     fun deleteCustomPreset(name: String) {
@@ -702,9 +685,89 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 }
 
-internal fun isCueScoreScoreboardUrl(url: String): Boolean =
-    url.startsWith(CUESCORE_SCOREBOARD_URL_PREFIX) ||
-        url.startsWith(LEGACY_CUESCORE_SCOREBOARD_URL_PREFIX)
+internal fun isCueScoreScoreboardUrl(url: String, table: Boolean = false): Boolean =
+    url.startsWith(if (table) CUESCORE_TABLE_SCOREBOARD_URL_PREFIX else CUESCORE_SCOREBOARD_URL_PREFIX)
+
+internal fun AppSettings.withCueScoreOverlays(playerId: String?, tableId: String?): AppSettings {
+    val withPlayer = playerId?.let { withCueScoreWidget(it, table = false) } ?: this
+    return tableId?.let { withPlayer.withCueScoreWidget(it, table = true) } ?: withPlayer
+}
+
+private fun AppSettings.withCueScoreWidget(id: String, table: Boolean): AppSettings {
+    val numericId = requireNotNull(id.toLongOrNull()?.takeIf { it > 0 }) { "Invalid CueScore ID" }
+    val scoreboardUrl = "${if (table) CUESCORE_TABLE_SCOREBOARD_URL_PREFIX else CUESCORE_SCOREBOARD_URL_PREFIX}$numericId"
+    val existing = widgets.firstOrNull { it.kind == WidgetKind.WEB && isCueScoreScoreboardUrl(it.url, table) }
+    val widget = SceneWidget(
+        id = existing?.id ?: Ids.newId(),
+        kind = WidgetKind.WEB,
+        name = if (table) "Table scoreboard overlay" else "Player scoreboard overlay",
+        enabled = true,
+        posX = 0.5f,
+        posY = 0.5f,
+        width = 1f,
+        height = 1f,
+        url = scoreboardUrl,
+    )
+    return copy(
+        widgets = if (existing == null) widgets + widget else widgets.map { if (it.id == existing.id) widget else it },
+        scenes = scenes.map { scene ->
+            if (scene.id == selectedSceneId && widget.id !in scene.widgetIds) {
+                scene.copy(widgetIds = scene.widgetIds + widget.id)
+            } else {
+                scene
+            }
+        },
+    ).withCueScoreQuickButton(if (table) ButtonAction.CUESCORE_TABLE_SCOREBOARD else ButtonAction.CUESCORE_SCOREBOARD)
+}
+
+private fun AppSettings.withCueScoreQuickButton(action: ButtonAction): AppSettings {
+    if (action in quickButtons.slots.map { it.action }) return this
+    val occupiedCells = quickButtons.slots.flatMap { slot ->
+        if (slot.width == QuickButtonWidth.LARGE) {
+            listOf(slot.rowIndex to QuickButtonColumn.LEFT, slot.rowIndex to QuickButtonColumn.RIGHT)
+        } else {
+            listOfNotNull(slot.columnPosition?.let { slot.rowIndex to it })
+        }
+    }.toSet()
+    val freeCell = (0..4).asSequence().flatMap { row ->
+        sequenceOf(QuickButtonColumn.LEFT, QuickButtonColumn.RIGHT).map { column -> row to column }
+    }.firstOrNull { it !in occupiedCells } ?: return this
+    return copy(
+        quickButtons = quickButtons.copy(
+            slots = quickButtons.slots + QuickButtonSlot(action, QuickButtonWidth.SMALL, freeCell.first, freeCell.second),
+        ),
+    )
+}
+
+internal fun parseCueScoreVenueSearchResponse(response: String, offset: Int): CueScoreVenuePage {
+    val page = JSONObject(response)
+    val items = page.getJSONArray("items")
+    val venues = (0 until items.length()).map {
+        val venue = items.getJSONObject(it)
+        val id = venue.getLong("venueId")
+        val name = venue.getString("name")
+        if (id <= 0 || name.isBlank()) throw JSONException("Invalid venue")
+        CueScoreVenue(id.toString(), name, venue.optString("address").takeIf { it.isNotBlank() && it != "null" })
+    }
+    val next = if (page.getBoolean("hasMore")) page.getInt("nextOffset").also {
+        if (it <= offset) throw JSONException("Invalid venue pagination")
+    } else null
+    return CueScoreVenuePage(venues, next)
+}
+
+internal fun parseCueScoreTablesResponse(response: String, venueId: String): List<CueScoreTable> {
+    val venue = JSONObject(response)
+    if (venue.getLong("venueId").toString() != venueId) throw JSONException("Unexpected venue")
+    val name = venue.getString("name")
+    val tables = venue.getJSONArray("tables")
+    return (0 until tables.length()).map {
+        val table = tables.getJSONObject(it)
+        val id = table.getLong("tableId")
+        val tableName = table.getString("name")
+        if (id <= 0 || tableName.isBlank() || name.isBlank()) throw JSONException("Invalid table")
+        CueScoreTable(id.toString(), tableName, venueId, name)
+    }
+}
 
 internal fun parseCueScorePlayerSearchResponse(response: String, offset: Int): CueScorePlayerSearchResult.Found {
     val page = JSONObject(response)

@@ -156,7 +156,7 @@
     <string name="advanced_record">Record stream</string>
 
     <string name="about_license">Open source, GNU GPL v3 license.</string>
-    <string name="about_source">Source: github.com/0rb1ta/Brix</string>
+    <string name="about_source">Source: github.com/cuescore</string>
     <string name="status_rejected">Rejected by server</string>
     <string name="thermal_ok">OK</string>
     <string name="thermal_warm">Warm</string>
@@ -327,7 +327,8 @@
     <string name="btn_pick_file">Pick a file</string>
     <string name="widget_hint_empty">Widgets are drawn over the video. Image and text are native, no browser; a web page keeps a browser running and costs about a tenth of a core.</string>
     <string name="button_snapshot">Snapshot</string>
-    <string name="button_cuescore_scoreboard">CueScore scoreboard</string>
+    <string name="button_cuescore_scoreboard">Player scoreboard overlay</string>
+    <string name="button_cuescore_table_scoreboard">Table scoreboard overlay</string>
     <string name="snapshot_saved">Frame saved to the gallery</string>
     <string name="snapshot_failed">Could not capture the frame</string>
     <string name="dialog_delete_widget_text">%1$s "%2$s" will be removed from every scene.</string>
@@ -341,9 +342,22 @@
     <string name="onboarding_perm_mic">Microphone</string>
     <string name="onboarding_perm_notifications">Notifications</string>
     <string name="onboarding_quality_title">Quality</string>
-    <string name="onboarding_cuescore_title">CueScore player profile</string>
-    <string name="onboarding_cuescore_text">Search for your name and select your CueScore player profile. We’ll add a full-screen scoreboard to your stream.</string>
-    <string name="onboarding_cuescore_search_name">Player name (at least 2 characters)</string>
+    <string name="onboarding_cuescore_title">Player scoreboard overlay</string>
+    <string name="onboarding_cuescore_text">The overlay displays all matches the player is involved in. Search for a player name and select one to add a player scoreboard overlay. </string>
+    <string name="onboarding_table_title">Table scoreboard overlay</string>
+    <string name="onboarding_table_text">The overlay displays all matches played on selected table. Search for a venue, then select a table to add its scoreboard overlay.</string>
+    <string name="onboarding_table_venue_name">Venue name</string>
+    <string name="onboarding_table_search">Search venues</string>
+    <string name="onboarding_table_more_venues">Show more venues</string>
+    <string name="onboarding_table_select">Select table</string>
+    <string name="onboarding_table_selected_name">Table %1$s</string>
+    <string name="onboarding_table_no_venues">No matching venues were found.</string>
+    <string name="onboarding_table_no_tables">This venue has no tables available. Search for another venue.</string>
+    <string name="onboarding_table_search_failed">Could not search for venues. Check your connection and try again.</string>
+    <string name="onboarding_table_lookup_failed">Could not load the venue’s tables. Select the venue again to retry.</string>
+    <string name="onboarding_table_edit">Change table</string>
+    <string name="onboarding_table_toggle_help">Look for this button in the main stream controls. Tap it to show the table scoreboard overlay; tap it again to hide it, even while streaming.</string>
+    <string name="onboarding_cuescore_search_name">Player name</string>
     <string name="onboarding_cuescore_search">Search players</string>
     <string name="onboarding_cuescore_searching">Searching…</string>
     <string name="onboarding_cuescore_edit">Change player</string>
@@ -354,17 +368,17 @@
     <!-- Language this file is written in. The language selection screen uses it
          to distinguish our translation from Android system languages. -->
     <string name="locale_tag" translatable="false">en</string>
-    <string name="onboarding_welcome_title">Hi there!</string>
+    <string name="onboarding_welcome_title">CueScore Mobile Streaming</string>
     <string name="onboarding_welcome_p1">Welcome to CueScore Mobile Streaming — an app for streaming billiard matches.</string>
-    <string name="onboarding_welcome_p2">An overlay is added to the stream with any match started for your CueScore player profile.</string>
+    <string name="onboarding_welcome_p2">Follow any match involving yourself or someone else and/or follow all matches on a certain table.</string>
     <string name="onboarding_welcome_p3">What did the white ball say to the other balls? Get in line, there’s a cue here..</string>
-    <string name="onboarding_welcome_p4">Happy streaming!</string>
+    <string name="onboarding_welcome_p4">Happy streaming! Send feedback to support@cuescore.com!</string>
     <string name="onboarding_server_title">Where to stream</string>
     <string name="onboarding_server_text">Set the receiver your stream goes to. You can edit this later in the app settings as well.</string>
     <string name="onboarding_stream_id">Stream ID (streamid)</string>
     <string name="onboarding_stream_id_hint">Optional: fill in only if streamid isn’t already part of the address above.</string>
     <string name="onboarding_import_title">Bring settings from another device</string>
-    <string name="onboarding_import_text">Paste a configuration link from CueScore Mobile Streaming, Moblin or IRL Pro.</string>
+    <string name="onboarding_import_text">Paste a configuration link from Brix, Moblin or IRL Pro.</string>
     <string name="onboarding_quality_text">Resolution, frame rate and bitrate. All of it can be changed later in the stream profile.</string>
     <string name="onboarding_bitrate">%1$d kbps</string>
     <string name="onboarding_preset_720p30">A safe start on a mobile network</string>
@@ -376,7 +390,7 @@
     <string name="onboarding_done_text">Initial setup is complete.</string>
     <string name="onboarding_done_server">Server saved — you’re ready to go live.</string>
     <string name="onboarding_done_no_server">To go live, add a server: Settings → Servers. Tapping Start without a server opens that list for you.</string>
-    <string name="onboarding_done_scenes">Don’t forget to add scenes and overlays if you need them.</string>
+    <string name="onboarding_done_scenes">Add scenes and overlays if you need them.</string>
     <string name="onboarding_skip_step">Skip</string>
     <string name="chat_emotes_section">Emotes</string>
     <string name="chat_third_party_emotes">7TV and BTTV emotes</string>

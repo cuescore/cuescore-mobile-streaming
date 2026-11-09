@@ -3,6 +3,11 @@
 An Android streaming app for billiard matches, with a
 scoreboard overlay you can show or hide from the stream controls.
 
+The Setup guide offers two optional overlays: a **Player scoreboard overlay**
+selected through player search, and a **Table scoreboard overlay** selected by
+searching for a venue and choosing one of its tables. Either step can be skipped.
+Each added overlay has its own CueScore toggle button in the main stream controls.
+
 This is a fork of Brix (https://github.com/0rb1ta/Brix) and has its own CueScore
 branding, features and adjustments.
 

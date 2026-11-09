@@ -59,6 +59,7 @@ enum class ButtonAction {
     SCENE,
     SNAPSHOT,
     CUESCORE_SCOREBOARD,
+    CUESCORE_TABLE_SCOREBOARD,
 }
 
 /**
@@ -700,6 +701,14 @@ data class CueScorePlayer(
 )
 
 @Serializable
+data class CueScoreTable(
+    val id: String,
+    val name: String,
+    val venueId: String,
+    val venueName: String,
+)
+
+@Serializable
 data class AppSettings(
     /** Audio settings shared by all profiles. Previously each profile held a copy:
      *  users edited them in one place, then switching profiles changed the settings
@@ -734,6 +743,7 @@ data class AppSettings(
      */
     val onboardingDone: Boolean? = null,
     val cueScorePlayer: CueScorePlayer? = null,
+    val cueScoreTable: CueScoreTable? = null,
     val twitch: TwitchIntegration = TwitchIntegration(),
     val kick: KickIntegration = KickIntegration(),
     @Deprecated("Kept only for schema migration into overlays.")
